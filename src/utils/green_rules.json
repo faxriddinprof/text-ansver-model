@@ -1,0 +1,805 @@
+{
+  "meta": {
+    "source": "O'zbekiston Respublikasi Iqtisodiyot va Moliya Vazirining 286-son Buyrug'i (2025)",
+    "document": "Yashil iqtisodiyot loyihalarini baholash tartibi to'g'risidagi Nizom",
+    "version": "1.0.0",
+    "logic": "Exclusions override all rules. If any exclusion matches -> project is NOT GREEN. Required rules must pass. Optional rules contribute to scoring."
+  },
+
+  "evaluation_flow": {
+    "step_1": "Check exclusions (Section 16) — any match disqualifies immediately",
+    "step_2": "Check if project requires mandatory complex expert conclusion",
+    "step_3": "If yes to step_2 — verify expert conclusion exists",
+    "step_4": "Check project against category/sector eligibility (rules)",
+    "step_5": "If threshold indicators exist — verify certificate or auditor conclusion",
+    "step_6": "If qualitative indicators apply — verify sector-level compliance",
+    "step_7": "Approved projects enter the green portfolio and are monitored"
+  },
+
+  "exclusions": [
+    {
+      "id": "EX01",
+      "field": "is_illegal_activity",
+      "description": "Activity deemed illegal under Uzbekistan law, international conventions, or subject to international economic/trade/political/personal sanctions",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX02",
+      "field": "damages_cultural_heritage",
+      "description": "Activity that damages, destroys, or alters UNESCO or state-protected cultural heritage sites",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX03",
+      "field": "involves_weapons_production_or_sales",
+      "description": "Production or sale of weapons and ammunition",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX04",
+      "field": "involves_alcohol_or_tobacco",
+      "description": "Production or sale of alcoholic beverages and tobacco products",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX05",
+      "field": "involves_gambling",
+      "description": "Gambling operations, casinos, and similar activities",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX06",
+      "field": "involves_sexual_exploitation",
+      "description": "Any activity contrary to ethical norms including sexual exploitation",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX07",
+      "field": "involves_nuclear_power",
+      "description": "Any activity related to nuclear power generation",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX08",
+      "field": "involves_radioactive_material_production_or_sales",
+      "description": "Production or sale of radioactive materials (exception: state-approved medical devices and quality-control measurement instruments deemed insignificant and adequately shielded)",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX09",
+      "field": "involves_unbound_asbestos",
+      "description": "Production or sale of unbound asbestos fibers. Exception: bound asbestos cement products with asbestos content below 20%",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX10",
+      "field": "involves_fossil_fuel_extraction_equipment",
+      "description": "Equipment that facilitates extraction of fossil hydrocarbon fuels under the pretext of energy efficiency improvements",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX11",
+      "field": "is_coal_based_project",
+      "description": "Any coal-based project or investment initiative that involves coal use",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX12",
+      "field": "applies_renewable_energy_in_oil_coal_extraction",
+      "description": "Renewable energy projects applied during oil and coal extraction or operational processes",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX13",
+      "field": "is_coal_oil_cogeneration_plant",
+      "description": "Cogeneration stations operating on coal or petroleum products",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX14",
+      "field": "uses_banned_pesticides_herbicides_fertilizers",
+      "description": "Use of nationally or internationally banned pesticides, herbicides, or fertilizers",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX15",
+      "field": "introduces_invasive_non_native_species",
+      "description": "Planting or introducing non-native invasive plant or animal species harmful to local ecosystems",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX16",
+      "field": "causes_excessive_water_depletion",
+      "description": "Projects leading to excessive water consumption or depletion of groundwater in water-scarce areas",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    },
+    {
+      "id": "EX17",
+      "field": "involves_chemical_plastic_recycling",
+      "description": "Chemical recycling of plastics — explicitly excluded from the circular economy category",
+      "condition": "==",
+      "value": true,
+      "disqualifies": true
+    }
+  ],
+
+  "categories": {
+    "EM1": {
+      "code": "EM1",
+      "name": "climate_change_mitigation",
+      "description": "Mitigation of climate change consequences — reducing greenhouse gas emissions, renewable energy, clean transport, energy efficiency"
+    },
+    "EM2": {
+      "code": "EM2",
+      "name": "climate_change_adaptation",
+      "description": "Adaptation to climate change — infrastructure and systems that help cope with climate impacts"
+    },
+    "EM3": {
+      "code": "EM3",
+      "name": "sustainable_water_use",
+      "description": "Sustainable use and protection of water resources — water efficiency, wastewater treatment, water supply"
+    },
+    "EM4": {
+      "code": "EM4",
+      "name": "circular_economy_transition",
+      "description": "Transition to a circular economy — recycling, reuse, bio-waste processing, waste reduction"
+    },
+    "EM5": {
+      "code": "EM5",
+      "name": "pollution_prevention_and_control",
+      "description": "Prevention and control of pollution — GHG emission reduction, dust-gas filtering, clean production"
+    },
+    "EM6": {
+      "code": "EM6",
+      "name": "biodiversity_and_ecosystem_protection",
+      "description": "Protection and restoration of biodiversity and ecosystems — reforestation, desertification prevention, ecosystem restoration"
+    }
+  },
+
+  "rules": [
+    {
+      "id": "R01",
+      "name": "wind_energy_generation",
+      "type": "boolean",
+      "field": "uses_wind_energy",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "Electricity generation using wind energy"
+    },
+    {
+      "id": "R02",
+      "name": "solar_energy_generation",
+      "type": "boolean",
+      "field": "uses_solar_energy",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "Electricity generation using solar photovoltaic energy"
+    },
+    {
+      "id": "R03",
+      "name": "geothermal_co2_emission_limit",
+      "type": "threshold",
+      "field": "geothermal_co2_emission_gco2e_per_kwh",
+      "operator": "<=",
+      "value": 100,
+      "unit": "gCO2e/kWh",
+      "required": true,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "Geothermal energy: environmental emissions must not exceed 100g CO2e per kWh"
+    },
+    {
+      "id": "R04",
+      "name": "small_hydropower_capacity",
+      "type": "threshold",
+      "field": "hydropower_capacity_mw",
+      "operator": "<=",
+      "value": 10,
+      "unit": "MW",
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "Hydropower projects up to 10 MW automatically qualify as green"
+    },
+    {
+      "id": "R05",
+      "name": "large_hydropower_co2_emission_limit",
+      "type": "threshold",
+      "field": "hydropower_co2_emission_g_per_kwh",
+      "operator": "<=",
+      "value": 100,
+      "unit": "g/kWh",
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "For hydropower >10 MW: CO2 emissions must not exceed 100g/kWh (or see R06 as alternative)"
+    },
+    {
+      "id": "R06",
+      "name": "large_hydropower_surface_power_ratio",
+      "type": "threshold",
+      "field": "hydropower_surface_power_ratio_w_per_m2",
+      "operator": ">=",
+      "value": 10,
+      "unit": "W/m2",
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "For hydropower >10 MW alternative path: water basin production-to-surface ratio must be >= 10 W/m2"
+    },
+    {
+      "id": "R07",
+      "name": "renewable_heating_cooling_cogeneration",
+      "type": "boolean",
+      "field": "uses_renewable_for_heating_cooling_or_cogeneration",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "Construction/operation of facilities using renewable energy for heating, cooling, or cogeneration"
+    },
+    {
+      "id": "R08",
+      "name": "grid_upgrade_for_renewable_integration",
+      "type": "boolean",
+      "field": "upgrades_transmission_for_renewable_integration",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "transmission_systems",
+      "description": "Modernization of existing transmission systems or development of new ones to integrate renewable energy sources"
+    },
+    {
+      "id": "R09",
+      "name": "smart_grid_ict_implementation",
+      "type": "boolean",
+      "field": "implements_smart_grid_or_ict",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "transmission_systems",
+      "description": "ICT/smart grid: control systems, automation, sensors, smart meters, AKT platforms"
+    },
+    {
+      "id": "R10",
+      "name": "renewable_energy_storage_system",
+      "type": "boolean",
+      "field": "uses_renewable_energy_storage",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy_technology",
+      "description": "Energy storage connected to renewable sources (BESS, mechanical, thermal, electrochemical including green hydrogen, green ammonia, supercapacitors)"
+    },
+    {
+      "id": "R11",
+      "name": "concentrated_solar_thermal",
+      "type": "boolean",
+      "field": "uses_concentrated_solar_thermal",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "Concentrated solar thermal energy production or other solar thermal applications"
+    },
+    {
+      "id": "R12",
+      "name": "solar_or_geothermal_heat_pump",
+      "type": "boolean",
+      "field": "uses_solar_or_geothermal_heat_pump",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "renewable_energy",
+      "description": "Development/installation of electric heat pumps or absorption heat pumps powered by solar or geothermal heated water"
+    },
+    {
+      "id": "R13",
+      "name": "low_emission_vehicle_replacement",
+      "type": "boolean",
+      "field": "replaces_fleet_with_low_or_zero_emission_vehicles",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "alternative_transport",
+      "description": "Replacing vehicle/rail fleet with low-emission (CNG/LNG) or zero-emission (electric/green hydrogen) technologies"
+    },
+    {
+      "id": "R14",
+      "name": "zero_emission_vehicle_purchase",
+      "type": "boolean",
+      "field": "purchases_zero_direct_ghg_vehicles",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "alternative_transport",
+      "description": "Purchase or production of new vehicles and locomotives with zero direct greenhouse gas emissions"
+    },
+    {
+      "id": "R15",
+      "name": "ev_battery_production_or_purchase",
+      "type": "boolean",
+      "field": "produces_or_buys_ev_lithium_ion_batteries",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "alternative_transport",
+      "description": "Production or purchase of lithium-ion batteries for electric and electric transport vehicles"
+    },
+    {
+      "id": "R16",
+      "name": "low_carbon_public_transport",
+      "type": "boolean",
+      "field": "implements_low_carbon_mass_transit",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "urban_transport",
+      "description": "Introduction, purchase, and operation of low-carbon public/mass transport systems"
+    },
+    {
+      "id": "R17",
+      "name": "non_motorized_transport_infrastructure",
+      "type": "boolean",
+      "field": "develops_cycling_or_pedestrian_infrastructure",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "urban_transport",
+      "description": "Development of non-motorized transport infrastructure (cycling lanes and pedestrian paths)"
+    },
+    {
+      "id": "R18",
+      "name": "ev_charging_infrastructure",
+      "type": "boolean",
+      "field": "installs_ev_charging_stations",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "urban_transport",
+      "description": "Introduction or installation of EV charging infrastructure including charging stations"
+    },
+    {
+      "id": "R19",
+      "name": "freight_truck_co2_emission_limit",
+      "type": "threshold",
+      "field": "freight_truck_co2_emission_g_per_tonne_km",
+      "operator": "<",
+      "value": 50,
+      "unit": "gCO2/tonne-km",
+      "required": false,
+      "category": "EM1",
+      "sector": "freight_transport",
+      "description": "Freight trucks must have CO2 emissions below 50g CO2 per tonne-km"
+    },
+    {
+      "id": "R20",
+      "name": "green_building_certification",
+      "type": "boolean",
+      "field": "has_edge_leed_or_breeam_certification",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "buildings",
+      "description": "New or existing building has EDGE, LEED, or BREEAM green building certification"
+    },
+    {
+      "id": "R21",
+      "name": "building_energy_efficiency_retrofit",
+      "type": "threshold",
+      "field": "building_energy_or_carbon_reduction_percent",
+      "operator": ">=",
+      "value": 20,
+      "unit": "%",
+      "required": false,
+      "category": "EM1",
+      "sector": "buildings",
+      "description": "Retrofitting/renovation of existing buildings must achieve at least 20% energy efficiency or carbon emission reduction"
+    },
+    {
+      "id": "R22",
+      "name": "agricultural_process_energy_efficiency",
+      "type": "boolean",
+      "field": "improves_agricultural_machinery_or_irrigation_energy_efficiency",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "agriculture",
+      "description": "Improving energy efficiency of agricultural machinery, irrigation systems — switching to biofuel, CNG/LNG, or electrification; installing energy-efficient pumps"
+    },
+    {
+      "id": "R23",
+      "name": "greenhouse_conversion_coal_to_gas_or_electric",
+      "type": "boolean",
+      "field": "converts_greenhouse_heating_from_coal_to_gas_or_electric",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "agriculture",
+      "description": "Converting greenhouse heating boilers from coal to natural gas or electric boilers"
+    },
+    {
+      "id": "R24",
+      "name": "energy_efficient_technology_product",
+      "type": "threshold",
+      "field": "product_energy_efficiency_improvement_percent",
+      "operator": ">",
+      "value": 20,
+      "unit": "%",
+      "required": false,
+      "category": "EM1",
+      "sector": "energy_efficient_technologies",
+      "description": "Production/installation of energy-efficient technologies (LED lighting, heat systems, insulation materials) ensuring >20% energy efficiency improvement"
+    },
+    {
+      "id": "R25",
+      "name": "industrial_process_energy_efficiency",
+      "type": "boolean",
+      "field": "upgrades_industrial_processes_for_energy_efficiency",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "industrial_processes",
+      "description": "Upgrading industrial/manufacturing processes to improve energy efficiency and eliminate energy losses"
+    },
+    {
+      "id": "R26",
+      "name": "energy_audit_conclusion",
+      "type": "boolean",
+      "field": "has_certified_energy_auditor_conclusion",
+      "expected": true,
+      "required": false,
+      "category": "EM1",
+      "sector": "energy_efficiency",
+      "description": "Energy efficiency projects may be evaluated based on technical documents and conclusion from state-certified energy auditor"
+    },
+    {
+      "id": "R27",
+      "name": "water_system_improvement",
+      "type": "boolean",
+      "field": "improves_water_supply_quality_or_efficiency",
+      "expected": true,
+      "required": false,
+      "category": "EM3",
+      "sector": "sustainable_water",
+      "description": "Projects addressing water scarcity, water quality improvement, water supply in scarce areas, water recycling, loss detection and elimination"
+    },
+    {
+      "id": "R28",
+      "name": "water_or_sewage_system_repair",
+      "type": "boolean",
+      "field": "repairs_or_installs_water_or_sewage_systems",
+      "expected": true,
+      "required": false,
+      "category": "EM3",
+      "sector": "sustainable_water",
+      "description": "Repair of new or existing water and sewage systems; purchasing/installing water efficiency technologies"
+    },
+    {
+      "id": "R29",
+      "name": "wastewater_treatment_facility",
+      "type": "boolean",
+      "field": "implements_wastewater_treatment",
+      "expected": true,
+      "required": false,
+      "category": "EM3",
+      "sector": "wastewater_treatment",
+      "description": "Wastewater treatment facilities, large-scale effluent treatment processes"
+    },
+    {
+      "id": "R30",
+      "name": "water_treatment_energy_efficiency",
+      "type": "threshold",
+      "field": "water_treatment_energy_efficiency_improvement_percent",
+      "operator": ">=",
+      "value": 30,
+      "unit": "%",
+      "required": false,
+      "category": "EM3",
+      "sector": "wastewater_treatment",
+      "description": "Water recycling and treatment systems must achieve at least 30% energy efficiency improvement"
+    },
+    {
+      "id": "R31",
+      "name": "recycling_infrastructure_development",
+      "type": "boolean",
+      "field": "develops_recycling_processes_or_infrastructure",
+      "expected": true,
+      "required": false,
+      "category": "EM4",
+      "sector": "recycling",
+      "description": "Processes, infrastructure, and technologies aimed at recycling and waste management practices"
+    },
+    {
+      "id": "R32",
+      "name": "bio_waste_anaerobic_processing",
+      "type": "boolean",
+      "field": "processes_bio_waste_anaerobically_for_biogas",
+      "expected": true,
+      "required": false,
+      "category": "EM4",
+      "sector": "recycling",
+      "description": "Anaerobic processing of bio-waste (manure etc.) to produce biogas, alternative energy, and mineral fertilizers (composting)"
+    },
+    {
+      "id": "R33",
+      "name": "closed_landfill_biogas_capture",
+      "type": "boolean",
+      "field": "captures_biogas_from_closed_landfill",
+      "expected": true,
+      "required": false,
+      "category": "EM4",
+      "sector": "recycling",
+      "description": "Projects that capture biogas from closed landfill facilities"
+    },
+    {
+      "id": "R34",
+      "name": "recycled_aluminum_content_threshold",
+      "type": "threshold",
+      "field": "recycled_aluminum_content_percent",
+      "operator": ">=",
+      "value": 65,
+      "unit": "%",
+      "required": false,
+      "category": "EM4",
+      "sector": "circular_economy",
+      "description": "Aluminum-based consumer products must contain at least 65% recycled aluminum"
+    },
+    {
+      "id": "R35",
+      "name": "recycled_plastic_content_threshold",
+      "type": "threshold",
+      "field": "recycled_renewable_or_bioplastic_content_percent",
+      "operator": ">=",
+      "value": 65,
+      "unit": "%",
+      "required": false,
+      "category": "EM4",
+      "sector": "circular_economy",
+      "description": "Plastic products must consist of at least 65% recycled, renewable, and/or bioplastic material"
+    },
+    {
+      "id": "R36",
+      "name": "greenhouse_gas_emission_reduction",
+      "type": "boolean",
+      "field": "reduces_ghg_emissions_in_production",
+      "expected": true,
+      "required": false,
+      "category": "EM5",
+      "sector": "emission_reduction",
+      "description": "Reducing greenhouse gas emissions in production/service processes via process upgrade, sensor installation, or third-party investments"
+    },
+    {
+      "id": "R37",
+      "name": "dust_gas_filter_installation",
+      "type": "boolean",
+      "field": "installs_dust_gas_filter_products",
+      "expected": true,
+      "required": false,
+      "category": "EM5",
+      "sector": "emission_reduction",
+      "description": "Production, purchase, installation, and service of dust-gas filter products for GHG emission reduction"
+    },
+    {
+      "id": "R38",
+      "name": "biodiversity_preservation_reforestation",
+      "type": "boolean",
+      "field": "promotes_biodiversity_or_reforestation",
+      "expected": true,
+      "required": false,
+      "category": "EM6",
+      "sector": "forestry",
+      "description": "Projects promoting biodiversity, preventing desertification, and restoring plants/trees in forests and farmlands"
+    },
+    {
+      "id": "R39",
+      "name": "degraded_land_reforestation",
+      "type": "boolean",
+      "field": "reforests_degraded_or_arid_areas",
+      "expected": true,
+      "required": false,
+      "category": "EM6",
+      "sector": "forestry",
+      "description": "Sustainable afforestation, planting, and care of trees in degraded and arid areas"
+    },
+    {
+      "id": "R40",
+      "name": "expert_conclusion_for_mandatory_category",
+      "type": "boolean",
+      "field": "has_mandatory_complex_expert_conclusion",
+      "expected": true,
+      "required": true,
+      "category": null,
+      "sector": "evaluation_process",
+      "description": "Projects in mandatory category must have a complex expert conclusion from an authorized body"
+    },
+    {
+      "id": "R41",
+      "name": "compliance_certificate_for_threshold_standards",
+      "type": "boolean",
+      "field": "has_compliance_certificate_from_authorized_body",
+      "expected": true,
+      "required": false,
+      "category": null,
+      "sector": "evaluation_process",
+      "description": "Where sector compliance threshold standards are specified, a valid certificate from authorized body or independent expert organization is required"
+    }
+  ],
+
+  "dependent_rules": [
+    {
+      "id": "DR01",
+      "description": "If project is in mandatory expert conclusion category, expert conclusion must exist; otherwise project cannot proceed",
+      "if": {
+        "field": "requires_mandatory_expert_conclusion",
+        "operator": "==",
+        "value": true
+      },
+      "then": {
+        "field": "has_mandatory_complex_expert_conclusion",
+        "operator": "==",
+        "value": true
+      },
+      "on_failure": "not_green"
+    },
+    {
+      "id": "DR02",
+      "description": "If project falls under any exclusion activity listed in Section 16, it is classified as excluded and cannot be green",
+      "if": {
+        "field": "matches_any_exclusion_condition",
+        "operator": "==",
+        "value": true
+      },
+      "then": {
+        "field": "is_green",
+        "operator": "==",
+        "value": false
+      },
+      "on_failure": null
+    },
+    {
+      "id": "DR03",
+      "description": "If sector has defined threshold (quantitative) indicators and project must be green, a compliance certificate from an authorized body must exist",
+      "if": {
+        "field": "sector_has_defined_threshold_indicators",
+        "operator": "==",
+        "value": true
+      },
+      "then": {
+        "field": "has_compliance_certificate_from_authorized_body",
+        "operator": "==",
+        "value": true
+      },
+      "on_failure": "reclassify_required"
+    },
+    {
+      "id": "DR04",
+      "description": "Hydropower >10 MW requires EITHER CO2 emission <= 100g/kWh OR surface power ratio >= 10 W/m2 (at least one must be satisfied)",
+      "if": {
+        "field": "hydropower_capacity_mw",
+        "operator": ">",
+        "value": 10
+      },
+      "then": {
+        "any_of": [
+          {
+            "field": "hydropower_co2_emission_g_per_kwh",
+            "operator": "<=",
+            "value": 100
+          },
+          {
+            "field": "hydropower_surface_power_ratio_w_per_m2",
+            "operator": ">=",
+            "value": 10
+          }
+        ]
+      },
+      "on_failure": "not_green"
+    },
+    {
+      "id": "DR05",
+      "description": "If project does not meet compliance requirements and has no certificate, borrower must realign business plan / TIA documentation",
+      "if": {
+        "field": "meets_compliance_requirements",
+        "operator": "==",
+        "value": false
+      },
+      "then": {
+        "field": "must_realign_business_plan_to_compliance",
+        "operator": "==",
+        "value": true
+      },
+      "on_failure": "not_green"
+    },
+    {
+      "id": "DR06",
+      "description": "If compliance threshold indicators for the project's sector change during monitoring, project must be removed from the green portfolio",
+      "if": {
+        "field": "compliance_thresholds_changed_during_monitoring",
+        "operator": "==",
+        "value": true
+      },
+      "then": {
+        "field": "remove_from_green_portfolio",
+        "operator": "==",
+        "value": true
+      },
+      "on_failure": null
+    },
+    {
+      "id": "DR07",
+      "description": "If sector has qualitative (non-numeric) indicators and they are met, project qualifies at category/sector level as green",
+      "if": {
+        "field": "sector_has_qualitative_indicators",
+        "operator": "==",
+        "value": true
+      },
+      "then": {
+        "field": "qualifies_at_sector_level",
+        "operator": "==",
+        "value": true
+      },
+      "on_failure": "not_green"
+    },
+    {
+      "id": "DR08",
+      "description": "Energy efficiency projects with an energy auditor conclusion may skip full certification but still require technical documentation",
+      "if": {
+        "field": "is_energy_efficiency_project",
+        "operator": "==",
+        "value": true
+      },
+      "then": {
+        "any_of": [
+          {
+            "field": "has_compliance_certificate_from_authorized_body",
+            "operator": "==",
+            "value": true
+          },
+          {
+            "field": "has_certified_energy_auditor_conclusion",
+            "operator": "==",
+            "value": true
+          }
+        ]
+      },
+      "on_failure": "not_green"
+    }
+  ]
+}
