@@ -22,17 +22,37 @@ data = extract_data(text)
 result = evaluate(data, rules_json)
 
 # --- Print output ---
-print("=" * 50)
+print("=" * 55)
 print("EXTRACTED DATA:")
-print("=" * 50)
+print("=" * 55)
 for key, value in data.items():
     print(f"  {key}: {value}")
 
 print()
-print("=" * 50)
-print("RESULT:")
-print("=" * 50)
-print(f"  Status : {result['status']}")
-print(f"  Reason : {result['reason']}")
-print(f"  Passed : {result['passed_rules']}")
-print(f"  Failed : {result['failed_rules']}")
+print("=" * 55)
+print(f"STATUS : {result['status']}")
+print(f"SCORE  : {result['score']} rule(s) passed")
+print("=" * 55)
+
+reasons = result["decision_reasons"]
+
+if reasons["exclusions_triggered"]:
+    print("\n[EXCLUSIONS TRIGGERED]")
+    for r in reasons["exclusions_triggered"]:
+        print(f"  ✗ {r}")
+
+if reasons["dependent_rules_triggered"]:
+    print("\n[DEPENDENT RULES TRIGGERED]")
+    for r in reasons["dependent_rules_triggered"]:
+        print(f"  ⚡ {r}")
+
+if reasons["passed_rules"]:
+    print("\n[PASSED RULES]")
+    for r in reasons["passed_rules"]:
+        print(f"  ✓ {r}")
+
+if reasons["failed_rules"]:
+    print("\n[FAILED RULES]")
+    for r in reasons["failed_rules"]:
+        print(f"  ✗ {r}")
+
