@@ -31,41 +31,48 @@ def check_exclusions(data, exclusions):
 def check_rules(data, rules):
     """
     Evaluate all rules against extracted data.
-    Supports 'boolean' and 'threshold' rule types.
-    Returns (passed_count, list of passed rule ids).
+    A rule is only evaluated if its field exists in data AND is not None.
+    Supports 'boolean' and 'threshold' (>= / <=) rule types.
+    Returns (passed_rules, failed_rules) as lists of rule IDs.
     """
     passed = []
+    failed = []
 
     for rule in rules:
         field = rule["field"]
 
+        # Skip entirely if field is missing or None
         if field not in data or data[field] is None:
             continue
 
         rule_type = rule["type"]
+        result = False
 
         if rule_type == "boolean":
-            if data[field] == rule.get("expected", True):
-                passed.append(rule["id"])
+            result = data[field] == rule.get("expected", True)
 
         elif rule_type == "threshold":
             operator = rule.get("operator")
             threshold = rule.get("value")
-            if operator in OPERATORS:
+            if operator in (">=", "<="):
                 try:
-                    if OPERATORS[operator](float(data[field]), float(threshold)):
-                        passed.append(rule["id"])
+                    result = OPERATORS[operator](float(data[field]), float(threshold))
                 except (TypeError, ValueError):
                     pass
 
-    return len(passed), passed
+        if result:
+            passed.append(rule["id"])
+        else:
+            failed.append(rule["id"])
+
+    return passed, failed
 
 
 def evaluate(data, rules_json):
     """
     Full evaluation pipeline:
-    1. Check exclusions — any match → NOT GREEN
-    2. Check rules — passed >= 3 → GREEN, else → NOT GREEN
+    1. Check exclusions — any match → NOT GREEN immediately
+    2. Check rules — len(passed) >= 3 → GREEN, else → NOT GREEN
     """
     exclusions = rules_json.get("exclusions", [])
     rules = rules_json.get("rules", [])
@@ -77,24 +84,24 @@ def evaluate(data, rules_json):
             "status": "NOT GREEN",
             "reason": f"Failed exclusion: {excl_id}",
             "passed_rules": [],
-            "passed_count": 0,
+            "failed_rules": [],
         }
 
     # Step 2: rules
-    passed_count, passed_rules = check_rules(data, rules)
+    passed_rules, failed_rules = check_rules(data, rules)
 
-    if passed_count >= 3:
+    if len(passed_rules) >= 3:
         return {
             "status": "GREEN",
-            "reason": f"Passed {passed_count} rule(s)",
+            "reason": f"Passed {len(passed_rules)} rule(s)",
             "passed_rules": passed_rules,
-            "passed_count": passed_count,
+            "failed_rules": failed_rules,
         }
 
     return {
         "status": "NOT GREEN",
-        "reason": f"Only {passed_count} rule(s) passed (minimum 3 required)",
+        "reason": f"Only {len(passed_rules)} rule(s) passed (minimum 3 required)",
         "passed_rules": passed_rules,
-        "passed_count": passed_count,
+        "failed_rules": failed_rules,
     }
 
