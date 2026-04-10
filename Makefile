@@ -1,16 +1,7 @@
-.PHONY: run migrate makemigrations install shell
-
-run:
-	python manage.py runserver
-
-migrate:
-	python manage.py migrate
-
-makemigrations:
-	python manage.py makemigrations
+.PHONY: run migrate makemigrations install shell test
 
 install:
-	pip install -r requirements.txt
+	pip3 install -r requirements.txt
 
-shell:
-	python manage.py shell
+test:
+	python3 test.py
