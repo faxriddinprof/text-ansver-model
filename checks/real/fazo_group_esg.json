@@ -1,0 +1,309 @@
+{
+  "document_title": "ESG Report 2026 — Loyihalarni ESG va yashil iqtisodiyot mezonlari asosida tezkor va shaffof baholash hamda barqaror moliyalashtirish jarayonini qo'llab-quvvatlash",
+  "issuer": "Platanus Sustainable Finance Solutions",
+
+  "sections": [
+    {
+      "section_name": "Muqova",
+      "content": "Loyihalarni ESG va yashil iqtisodiyot mezonlari asosida tezkor va shaffof baholash hamda barqaror moliyalashtirish jarayonini qo'llab-quvvatlash"
+    },
+    {
+      "section_name": "Yuklangan hujjatlar",
+      "content": "01 — ариза\n02 — банк хулосаси\n03 — дастлабки мониторинг\n04 — ТЭО\n05 — экология хулосаси"
+    },
+    {
+      "section_name": "Ma'lumotlar anketasi",
+      "content": "Yuklangan hujjatlar asosida modelni baholash va xulosa shakllantirish uchun zarur ma'lumotlarni o'z ichiga olgan anketa shakllantirildi.\n1. Mijoz nomi: \"FAZO GROUP\" MCHJ\n2. Kredit so'mmasi: 3 000 000,0 (uch million) AQSH dollari\n3. Mijoz STIR kodi: 206794633\n4. Kredit olishdan maqsad: Eksport oldi shartnomalarni bajarish maqsadida aylanma mablag'larni to'ldirish va trikotaj mahsulotlari ishlab chiqarish uchun zarur bo'lgan kalava ip, bo'yoq xizmatlari hamda polotno mahsulotlarini sotib olish.\n5. Tashkilot asosiy faoliyati: Trikotaj polotno va tayyor trikotaj kiyim-kechaklar ishlab chiqarish.\n6. Tashkilot manzili: Andijon viloyati, Xo'jaobod tumani, Beshqavoq MFY, Tiklanish ko'chasi 8.\n7. Shartnoma bo'yicha sotib olinayotgan uskuna/xizmat: Hujjatda uskuna yoki ishlab chiqarish liniyasi sotib olish nazarda tutilmagan. Kredit mablag'lari asosan xom ashyo va ishlab chiqarish uchun zarur materiallar hamda xizmatlar sotib olishga yo'naltirilgan.\n8. EDGE, LEED yoki BREEAM yashil sertifikati: Taqdim etilgan hujjatlar va bank xulosasiga ko'ra, EDGE, LEED yoki BREEAM kabi yashil sertifikatlar mavjudligi haqida ma'lumot keltirilmagan. Shuning uchun ushbu sertifikatlar taqdim etilmagan deb hisoblanadi."
+    },
+    {
+      "section_name": "Umumiy xulosa (green finance)",
+      "content": "Ushbu loyiha trikotaj mahsulotlari ishlab chiqarish faoliyatini moliyalashtirish va aylanma mablag'larni to'ldirishga qaratilgan. Kredit mablag'lari yangi uskunalar yoki ekologik samaradorlikni oshiruvchi texnologiyalarni joriy etishga yo'naltirilmagan hamda EDGE, LEED yoki BREEAM kabi yashil sertifikatlar mavjudligi tasdiqlanmagan. Shu sababli loyiha yashil moliyalashtirish (Green Finance) toifasiga kirmaydi. Loyiha bo'yicha atrof-muhit va ijtimoiy risklar mavjud ishlab chiqarish faoliyati doirasida baholanadi va past yoki o'rta darajada deb hisoblanadi."
+    },
+    {
+      "section_name": "Scoring natijalari — Stop-faktorlar",
+      "content": "Taqdim etilgan ma'lumotlarga ko'ra, loyiha bankning ESG siyosatida belgilangan taqiqlangan (stop-faktor) faoliyat turlariga kirmaydi. Loyiha qurol-yarog', tamaki va spirtli ichimliklar ishlab chiqarish, qimor faoliyati, radioaktiv materiallar, ko'mir yoki neft-gaz qazib olish kabi faoliyatlar bilan bog'liq emas. Shu sababli loyiha ESG talablari nuqtai nazaridan moliyalashtirish uchun maqbul deb baholanadi."
+    },
+    {
+      "section_name": "Yashil me'zonlar xulosasi",
+      "content": "Taqdim etilgan ma'lumotlarga ko'ra, loyiha qayta tiklanuvchi energiya manbalari, energiya samaradorligini oshirish yoki kam uglerodli texnologiyalar bilan bog'liq faoliyatlarni o'z ichiga olmaydi. Shuningdek, loyiha quyosh, shamol, gidroenergetika, elektromobil infratuzilmasi yoki boshqa yashil texnologiyalarni joriy etishni nazarda tutmaydi. Shu sababli loyiha yashil moliyalashtirish (Green Finance) mezonlariga kirmaydi."
+    }
+  ],
+
+  "project_info": {
+    "client_name": "FAZO GROUP MCHJ",
+    "stir_code": "206794633",
+    "credit_amount": "3 000 000,0 AQSH dollari",
+    "credit_purpose": "Eksport oldi shartnomalarni bajarish maqsadida aylanma mablag'larni to'ldirish va trikotaj mahsulotlari ishlab chiqarish uchun zarur bo'lgan kalava ip, bo'yoq xizmatlari hamda polotno mahsulotlarini sotib olish.",
+    "main_activity": "Trikotaj polotno va tayyor trikotaj kiyim-kechaklar ishlab chiqarish.",
+    "address": "Andijon viloyati, Xo'jaobod tumani, Beshqavoq MFY, Tiklanish ko'chasi 8.",
+    "equipment_purchase": null,
+    "green_certificate": null
+  },
+
+  "green_criteria": [
+    {
+      "id": "GC-01",
+      "description": "Shamol elektro stantsiyalarini loyihalashtirish, o'rnatish va qurish",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-02",
+      "description": "Quyosh elektro stantsiyalari loyihalashtirish, o'rnatish va qurish",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-03",
+      "description": "Geotermal energiya",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-04",
+      "description": "Gidro elektrostantsiyalar (GES) 10 MW gacha va undan yuqori quvvatdagi stantsiyalar",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya",
+      "threshold": "10 MW"
+    },
+    {
+      "id": "GC-05",
+      "description": "Qayta tiklanuvchi manbalardan isitish/sovutish va energiyani kogeneratsiyalash uchun foydalaniladigan obyektni qurish va ishlatish",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-06",
+      "description": "Qayta tiklanadigan energiya manbalarining tarmoqqa integratsiyalashuviga yordam beradigan yangi uzatish tizimlarini ishlab chiqish, qurish va modernizatsiya qilish",
+      "result": "Yo'q",
+      "category": "Energiya infratuzilmasi"
+    },
+    {
+      "id": "GC-07",
+      "description": "AKT/aqlli elektr tarmog'i ilovalari: boshqaruv elementlari, kompyuterlar, avtomatlashtirish, sensorlar, aqlli hisoblagichlar",
+      "result": "Yo'q",
+      "category": "Aqlli texnologiyalar"
+    },
+    {
+      "id": "GC-08",
+      "description": "Shamol turbinalari ishlab chiqarish, sotib olish va o'rnatish",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-09",
+      "description": "Quyosh panellari ishlab chiqarish, sotib olish va o'rnatish",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-10",
+      "description": "Gidro elektrostantsiyalar uchun uskunalar ishlab chiqarish",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-11",
+      "description": "Qayta tiklanadigan energiya manbalariga ulangan energiya saqlash tizimlari (BESS)",
+      "result": "Yo'q",
+      "category": "Energiya saqlash"
+    },
+    {
+      "id": "GC-12",
+      "description": "Quyosh kollektorlarini sotib olish, o'rnatish va ishlab chiqarish",
+      "result": "Yo'q",
+      "category": "Qayta tiklanuvchi energiya"
+    },
+    {
+      "id": "GC-13",
+      "description": "Avtomobil va temir yo'l parkini ishga tushirish / yangilashda past emissiyali yoqilg'ida yuradigan (siqilgan va suyuqlashtirilgan gaz) yoki nol emissiya texnologiyalari (elektr yoki yashil vodorod) bilan almashtirish",
+      "result": "Yo'q",
+      "category": "Toza transport"
+    },
+    {
+      "id": "GC-14",
+      "description": "Issiqxona gazlari emissiyasi nolga teng bo'lgan yangi transport vositalari, lokomotivlarni sotib olish/ishlab chiqarish",
+      "result": "Yo'q",
+      "category": "Toza transport"
+    },
+    {
+      "id": "GC-15",
+      "description": "Elektromobillarga va boshqa elektr transport vositalariga mo'ljallangan litiy-ion kabi batareyalarni ishlab chiqarish / sotib olish",
+      "result": "Yo'q",
+      "category": "Toza transport"
+    },
+    {
+      "id": "GC-16",
+      "description": "Motorsiz transport infratuzilmasini rivojlantirish (velosipedlar va piyodalar harakatlanishi)",
+      "result": "Yo'q",
+      "category": "Toza transport"
+    },
+    {
+      "id": "GC-17",
+      "description": "Elektromobillar uchun elektr quvvatlash stantsiyalarini qurish, o'rnatish va sotib olish",
+      "result": "Yo'q",
+      "category": "Toza transport"
+    },
+    {
+      "id": "GC-18",
+      "description": "Jamoat transportini rivojlantirish loyihalari",
+      "result": "Yo'q",
+      "category": "Toza transport"
+    },
+    {
+      "id": "GC-19",
+      "description": "Elektr va kam uglerodli temir yo'llarni qo'llab-quvvatlaydigan yoki ishlashini ta'minlaydigan tegishli infratuzilmani rivojlantirish",
+      "result": "Yo'q",
+      "category": "Toza transport"
+    },
+    {
+      "id": "GC-20",
+      "description": "Emissiyasi CO2/tonna-km 50 grammdan kam bo'lgan yuk avtomobillari",
+      "result": "Yo'q",
+      "category": "Toza transport",
+      "threshold": "CO2/tonna-km < 50 gramm"
+    },
+    {
+      "id": "GC-21",
+      "description": "Kamida 20% energiya samaradorligi va/yoki uglerod emissiyasini kamaytirishga erishish uchun mavjud binolarni qayta jihozlash/ta'mirlash",
+      "result": "Yo'q",
+      "category": "Binolar energiya samaradorligi",
+      "threshold": "≥ 20% energiya samaradorligi yoki uglerod emissiyasini kamaytirish"
+    }
+  ],
+
+  "stop_factors": [
+    {
+      "id": "SF-01",
+      "description": "Loyiha davlat ekologik ekspertizasi ijobiy xulosasi olish talab etiladigan toifaga tushadimi?",
+      "result": "Yo'q",
+      "triggered": false
+    },
+    {
+      "id": "SF-02",
+      "description": "Ekologik ekspertiza xulosasi olinganmi?",
+      "result": "Yo'q",
+      "triggered": false
+    },
+    {
+      "id": "SF-03",
+      "description": "O'zbekiston Respublikasining amaldagi qonunchiligi bo'yicha noqulay deb topilgan mahsulot yoki faoliyat turi",
+      "result": "Yo'q",
+      "triggered": false
+    },
+    {
+      "id": "SF-04",
+      "description": "Qurol-yaroq va o'q-dorilarni ishlab chiqarish yoki sotish",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["qurol", "yaroq", "o'q-dori", "qurol-yaroq"]
+    },
+    {
+      "id": "SF-05",
+      "description": "Spirtli ichimliklar ishlab chiqarish va sotish",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["spirtli", "alkogol", "ichimlik"]
+    },
+    {
+      "id": "SF-06",
+      "description": "Tamaki mahsulotlari ishlab chiqarish va sotish",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["tamaki", "sigaret", "tobacco"]
+    },
+    {
+      "id": "SF-07",
+      "description": "Qimor uyinlari va kazinolar faoliyat",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["qimor", "kazino", "gambling"]
+    },
+    {
+      "id": "SF-08",
+      "description": "Pornografik mahsulotlar reklamasi faoliyati",
+      "result": "Yo'q",
+      "triggered": false
+    },
+    {
+      "id": "SF-09",
+      "description": "Yadrovi quvvat bilan bog'liq faoliyat",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["yadro", "nuclear", "atom"]
+    },
+    {
+      "id": "SF-10",
+      "description": "Radioaktiv mahsulotlar ishlab chiqarish va sotish (tibbiy asbob-uskuna va sifat nazorati uskunalariga bundan mustasno)",
+      "result": "Yo'q",
+      "triggered": false,
+      "exceptions": "tibbiy asbob-uskuna va sifat nazorati uskunalari",
+      "trigger_keywords": ["radioaktiv"]
+    },
+    {
+      "id": "SF-11",
+      "description": "Bog'lanmagan asbest tolalari ishlab chiqarish va sotish",
+      "result": "Yo'q",
+      "triggered": false,
+      "exceptions": "asbest miqdori 20% dan oshmagan asbest sement ishlab chiqarish",
+      "trigger_keywords": ["asbest"]
+    },
+    {
+      "id": "SF-12",
+      "description": "Neft va gaz qazib olish uskunalari sotib olish",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["neft", "gaz", "qazib olish"]
+    },
+    {
+      "id": "SF-13",
+      "description": "Ko'mir bilan bog'liq har qanday faoliyat (qazib chiqarish, tashish, sotish, elektro energiya ishlab chiqarish va issiqlik energiyasi olish uchun yoqish)",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["ko'mir", "uglerod yoqish", "coal"]
+    },
+    {
+      "id": "SF-14",
+      "description": "Neft qazib chiqarish sanoati uchun quyosh panellari va shamol generatorlari sotib olish va o'rnatish",
+      "result": "Yo'q",
+      "triggered": false,
+      "trigger_keywords": ["neft qazib chiqarish sanoati", "quyosh panellari neft uchun"]
+    }
+  ],
+
+  "project_esg_assessment": {
+    "is_green_project": {
+      "value": false,
+      "evidence": "Shu sababli loyiha yashil moliyalashtirish (Green Finance) toifasiga kirmaydi."
+    },
+    "stop_factors_triggered": {
+      "value": false,
+      "evidence": "Loyiha bankning ESG siyosatida belgilangan taqiqlangan (stop-faktor) faoliyat turlariga kirmaydi."
+    },
+    "green_criteria_passed": {
+      "value": false,
+      "evidence": "Loyiha qayta tiklanuvchi energiya manbalari, energiya samaradorligini oshirish yoki kam uglerodli texnologiyalar bilan bog'liq faoliyatlarni o'z ichiga olmaydi."
+    },
+    "has_green_certificate": {
+      "value": false,
+      "certificate_types_checked": ["EDGE", "LEED", "BREEAM"],
+      "evidence": "EDGE, LEED yoki BREEAM kabi yashil sertifikatlar mavjudligi haqida ma'lumot keltirilmagan."
+    },
+    "uses_renewable_energy": {
+      "value": false,
+      "evidence": "Loyiha quyosh, shamol, gidroenergetika, elektromobil infratuzilmasi yoki boshqa yashil texnologiyalarni joriy etishni nazarda tutmaydi."
+    },
+    "environmental_risk_level": {
+      "value": "past yoki o'rta",
+      "evidence": "Loyiha bo'yicha atrof-muhit va ijtimoiy risklar mavjud ishlab chiqarish faoliyati doirasida baholanadi va past yoki o'rta darajada deb hisoblanadi."
+    },
+    "esg_financing_eligibility": {
+      "value": "maqbul (stop-faktorlar yo'q, lekin yashil emas)",
+      "evidence": "Loyiha ESG talablari nuqtai nazaridan moliyalashtirish uchun maqbul deb baholanadi."
+    },
+    "final_conclusion": {
+      "value": "NOT GREEN — Loyiha yashil moliyalashtirish (Green Finance) mezonlariga kirmaydi. Stop-faktorlar yo'q, ammo barcha yashil me'zonlar bo'yicha natija salbiy.",
+      "evidence": "Shu sababli loyiha yashil moliyalashtirish (Green Finance) mezonlariga kirmaydi."
+    }
+  }
+}
