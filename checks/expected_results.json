@@ -21,8 +21,8 @@
   },
   {
     "file": "checks/big_test.txt",
-    "expected": "GREEN",
-    "note": "Solar + wind, 120MW, 30% building efficiency, certificate — strong green project"
+    "expected": "NOT GREEN",
+    "note": "Solar + wind, 120MW hydro but CO2 data missing — DR04 skipped in balanced mode, but score still < 3 without filter/water rules"
   },
   {
     "file": "checks/dependent.txt",
@@ -32,6 +32,11 @@
   {
     "file": "checks/real.txt",
     "expected": "NOT GREEN",
-    "note": "Real bank application for food factory (apple juice) — not a green project, keyword false positives expected"
+    "note": "Real bank application for food factory — not a green project, keyword false positives expected in balanced mode"
+  },
+  {
+    "file": "checks/real/fazo_group_esg.json",
+    "expected": "NOT GREEN",
+    "note": "Structured ESG JSON report — FAZO GROUP trikotaj, no green criteria met, JSON pipeline"
   }
 ]

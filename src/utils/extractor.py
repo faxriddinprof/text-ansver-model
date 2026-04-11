@@ -206,29 +206,75 @@ def _validate(data: dict, text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Negation detection helper
+# ---------------------------------------------------------------------------
+
+# Negation words that can appear BEFORE or AFTER a keyword within a window
+_NEGATION_WORDS = [
+    "emas", "yo'q", "yo\u02BBq", "mavjud emas", "qilinmagan", "joriy etilmagan",
+    "yo'naltirilmagan", "nazarda tutilmagan", "taqdim etilmagan",
+    "not", "no ", "нет", "не ", "не соответствует", "не используется",
+    "javob bermaydi", "mos kelmaydi",
+]
+
+def _negated(text: str, keyword_pos: int, window: int = 80) -> bool:
+    """
+    Return True if a negation word appears within `window` chars of the keyword position.
+    Checks both before and after the keyword.
+    """
+    start = max(0, keyword_pos - window)
+    end   = min(len(text), keyword_pos + window)
+    snippet = text[start:end].lower()
+    return any(neg in snippet for neg in _NEGATION_WORDS)
+
+
+def _safe_keyword(text: str, keyword: str) -> bool:
+    """
+    Returns True only if keyword is present AND no negation is nearby.
+    Uses strict mode: requires multiple independent signals for short keywords.
+    """
+    t = text.lower()
+    pos = t.find(keyword.lower())
+    if pos == -1:
+        return False
+    return not _negated(t, pos)
+
+
+# ---------------------------------------------------------------------------
 # Keyword fallback — fills in None fields
 # ---------------------------------------------------------------------------
 
-def _keyword_fallback(data: dict, text: str) -> dict:
+def _keyword_fallback(data: dict, text: str, mode: str = "balanced") -> dict:
+    """
+    Fill None fields using keyword heuristics.
+
+    mode="balanced" : single keyword hit is enough (legacy)
+    mode="strict"   : requires keyword present AND no negation nearby
+    """
     t = text.lower()
+
+    def check(keyword: str, *extra_keywords) -> bool:
+        all_kws = [keyword] + list(extra_keywords)
+        if mode == "strict":
+            return any(_safe_keyword(t, kw) for kw in all_kws)
+        else:
+            return any(kw in t for kw in all_kws)
 
     fallbacks = {
         "uses_solar_energy":
-            "quyosh" in t or "\u0441\u043e\u043b\u043d\u0435\u0447\u043d" in t,
+            check("quyosh", "солнечн"),
         "installs_dust_gas_filter_products":
-            "filtr" in t or "\u0444\u0438\u043b\u044c\u0442\u0440" in t,
+            check("filtr", "фильтр"),
         "improves_water_supply_quality_or_efficiency":
-            ("suv" in t or "\u0432\u043e\u0434" in t) and (
-                "samarad" in t or "tejam" in t or "qayta ishlash" in t or "\u044d\u0444\u0444\u0435\u043a\u0442\u0438\u0432" in t
-            ),
+            (check("suv", "вод")) and check("samarad", "tejam", "qayta ishlash", "эффектив"),
         "reduces_ghg_emissions_in_production":
-            "issiqxona gaz" in t or "chiqindi" in t or "\u043f\u0430\u0440\u043d\u0438\u043a\u043e\u0432" in t or "\u0432\u044b\u0431\u0440\u043e\u0441" in t,
+            check("issiqxona gaz", "парников") or check("chiqindi kamaytir", "выброс"),
         "is_coal_based_project":
-            "ko'mir" in t or "ko\u02BBmir" in t,
+            check("ko'mir", "ko\u02BBmir", "уголь"),
         "involves_alcohol_or_tobacco":
-            "alkogol" in t or "tamaki" in t,
+            check("alkogol", "tamaki", "табак", "алкоголь"),
         "has_compliance_certificate_from_authorized_body":
-            "sertifikat" in t or "\u0441\u0435\u0440\u0442\u0438\u0444\u0438\u043a\u0430\u0442" in t,
+            check("sertifikat", "сертификат") and check("vakolatli", "муваффиқлик", "authorized"),
     }
 
     for field, result in fallbacks.items():
@@ -237,7 +283,12 @@ def _keyword_fallback(data: dict, text: str) -> dict:
 
     if data.get("building_energy_or_carbon_reduction_percent") is None:
         m = re.search(r"(\d+)\s*%", t)
-        data["building_energy_or_carbon_reduction_percent"] = int(m.group(1)) if m else None
+        if m:
+            pct = int(m.group(1))
+            # strict: ignore stray % values, require >= 5
+            data["building_energy_or_carbon_reduction_percent"] = pct if pct >= 5 else None
+        else:
+            data["building_energy_or_carbon_reduction_percent"] = None
 
     if data.get("hydropower_capacity_mw") is None:
         m = re.search(r"(\d+(?:\.\d+)?)\s*mw", t)
@@ -279,31 +330,34 @@ def _extract_with_llm(text: str) -> dict:
 # Keyword-only pipeline (Ollama unavailable)
 # ---------------------------------------------------------------------------
 
-def _extract_with_keywords(text: str) -> dict:
+def _extract_with_keywords(text: str, mode: str = "balanced") -> dict:
     data = {f: None for f in FIELDS}
     data = _validate(data, text)
-    return _keyword_fallback(data, text)
+    return _keyword_fallback(data, text, mode=mode)
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def extract_data(text: str) -> dict:
+def extract_data(text: str, mode: str = "balanced") -> dict:
     """
     Main extraction entry point.
     1. Try LLM (qwen2.5:7b via Ollama)
     2. Apply validation layer  — hard overrides
     3. Apply keyword fallback  — fill remaining None fields
+
+    mode="balanced" : lenient keyword matching (default)
+    mode="strict"   : negation-aware, reduces false positives
     """
     if _ollama_available():
         print(f"[extractor] Using LLM ({OLLAMA_MODEL})")
         data = _extract_with_llm(text)
         data = _validate(data, text)
-        data = _keyword_fallback(data, text)
+        data = _keyword_fallback(data, text, mode=mode)
     else:
         print("[extractor] Ollama unavailable — using keyword fallback")
-        data = _extract_with_keywords(text)
+        data = _extract_with_keywords(text, mode=mode)
 
     print(f"[extractor] Final data after validation: {data}")
     return data

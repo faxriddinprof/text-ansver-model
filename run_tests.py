@@ -1,58 +1,60 @@
 """
 run_tests.py
 
-Evaluation framework for the Green Project Evaluation System.
+Hybrid evaluation framework for the Green Project Evaluation System.
+
+Supports two pipelines:
+  - .json files → evaluate_from_esg_json()  (PRIMARY, high accuracy)
+  - .txt files  → extract_data() + evaluate() (FALLBACK)
 
 Usage:
-    python3 run_tests.py
-    python3 run_tests.py --quiet      # suppress extractor debug output
-    python3 run_tests.py --file checks/simple.txt  # single file
+    python3 run_tests.py                          # all tests, balanced mode
+    python3 run_tests.py --quiet                  # suppress extractor debug
+    python3 run_tests.py --mode strict            # strict negation-aware mode
+    python3 run_tests.py --file checks/simple.txt # single file
 """
 
 import json
 import os
 import sys
 
-# Suppress extractor debug prints when --quiet is passed
-QUIET = "--quiet" in sys.argv
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+
+QUIET       = "--quiet" in sys.argv
+MODE        = "strict" if "--mode" in sys.argv and sys.argv[sys.argv.index("--mode") + 1] == "strict" else "balanced"
 SINGLE_FILE = None
+
 for i, arg in enumerate(sys.argv):
     if arg == "--file" and i + 1 < len(sys.argv):
         SINGLE_FILE = sys.argv[i + 1]
+
+# ---------------------------------------------------------------------------
+# Imports (suppress noisy extractor prints in quiet mode)
+# ---------------------------------------------------------------------------
 
 if QUIET:
     import io
     sys.stdout = io.StringIO()
 
 from src.utils.parser import read_txt
-from src.utils.extractor import extract_data, _extract_with_keywords, _validate, _keyword_fallback
-from src.utils.engine import evaluate
+from src.utils.extractor import extract_data, _extract_with_keywords
+from src.utils.engine import evaluate, evaluate_from_esg_json
 
 if QUIET:
     sys.stdout = sys.__stdout__
 
-# Files larger than this limit use keyword-only extraction (LLM would time out)
+# Files larger than this limit skip LLM (too slow)
 LLM_CHAR_LIMIT = 20_000
-
-
-def extract(text: str) -> dict:
-    if len(text) > LLM_CHAR_LIMIT:
-        print(f"  [warn] File too large for LLM ({len(text):,} chars) — using keyword fallback")
-        data = _extract_with_keywords(text)
-        return data
-    return extract_data(text)
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 
-BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
-RULES_FILE   = os.path.join(BASE_DIR, "src", "utils", "green_rules.json")
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+RULES_FILE    = os.path.join(BASE_DIR, "src", "utils", "green_rules.json")
 EXPECTED_FILE = os.path.join(BASE_DIR, "checks", "expected_results.json")
-
-# ---------------------------------------------------------------------------
-# Load config
-# ---------------------------------------------------------------------------
 
 with open(RULES_FILE, encoding="utf-8") as f:
     rules_json = json.load(f)
@@ -67,30 +69,58 @@ if SINGLE_FILE:
         sys.exit(1)
 
 # ---------------------------------------------------------------------------
+# Pipeline runners
+# ---------------------------------------------------------------------------
+
+def run_txt_pipeline(file_path: str) -> dict:
+    """TXT pipeline: extract → evaluate (rule engine)."""
+    text = read_txt(file_path)
+    if len(text) > LLM_CHAR_LIMIT:
+        print(f"  [info] Large file ({len(text):,} chars) — keyword fallback, mode={MODE}")
+        data = _extract_with_keywords(text, mode=MODE)
+    else:
+        data = extract_data(text, mode=MODE)
+    result = evaluate(data, rules_json, mode=MODE)
+    result["pipeline"] = "txt"
+    return result
+
+
+def run_json_pipeline(file_path: str) -> dict:
+    """JSON pipeline: structured ESG JSON → evaluate_from_esg_json()."""
+    with open(file_path, encoding="utf-8") as f:
+        data = json.load(f)
+    result = evaluate_from_esg_json(data)
+    return result
+
+
+def run_pipeline(file_path: str) -> dict:
+    """Auto-select pipeline based on file extension."""
+    if file_path.endswith(".json"):
+        return run_json_pipeline(file_path)
+    return run_txt_pipeline(file_path)
+
+# ---------------------------------------------------------------------------
 # Test runner
 # ---------------------------------------------------------------------------
 
-passed_count = 0
-failed_count = 0
+passed_count  = 0
+failed_count  = 0
 failed_details = []
-
-SEPARATOR = "=" * 60
+SEPARATOR = "=" * 62
 
 print(f"\n{SEPARATOR}")
-print("  GREEN PROJECT EVALUATION — TEST SUITE")
+print(f"  GREEN PROJECT EVALUATION — TEST SUITE  [mode: {MODE}]")
 print(f"{SEPARATOR}\n")
 
 for entry in expected_list:
-    rel_path  = entry["file"]
-    expected  = entry["expected"]
-    note      = entry.get("note", "")
-    file_path = os.path.join(BASE_DIR, rel_path)
-
+    rel_path   = entry["file"]
+    expected   = entry["expected"]
+    note       = entry.get("note", "")
+    file_path  = os.path.join(BASE_DIR, rel_path)
     file_label = os.path.basename(rel_path)
 
     print(f"[TEST] {file_label}")
 
-    # --- File existence check ---
     if not os.path.exists(file_path):
         print(f"  Expected : {expected}")
         print(f"  Actual   : FILE NOT FOUND")
@@ -98,48 +128,67 @@ for entry in expected_list:
         failed_count += 1
         continue
 
-    # --- Run pipeline (suppress debug output in quiet mode) ---
+    # Run pipeline, suppress debug in quiet mode
     if QUIET:
-        sys.stdout = io.StringIO()
+        import io as _io
+        _buf = _io.StringIO()
+        sys.stdout = _buf
 
-    text   = read_txt(file_path)
-    data   = extract(text)
-    result = evaluate(data, rules_json)
+    try:
+        result = run_pipeline(file_path)
+    except Exception as e:
+        if QUIET:
+            sys.stdout = sys.__stdout__
+        print(f"  ERROR    : {e}")
+        print(f"  Result   : ⚠️  SKIP\n")
+        failed_count += 1
+        continue
 
     if QUIET:
         sys.stdout = sys.__stdout__
 
-    actual  = result["status"]
-    score   = result["score"]
-    reasons = result.get("decision_reasons", {})
+    actual     = result["status"]
+    score      = result.get("score", 0)
+    confidence = result.get("confidence")
+    pipeline   = result.get("pipeline", "txt")
+    reason     = result.get("reason", "")
 
-    passed_rules      = reasons.get("passed_rules", [])
-    failed_rules      = reasons.get("failed_rules", [])
-    exclusions        = reasons.get("exclusions_triggered", [])
-    dependent_rules   = reasons.get("dependent_rules_triggered", [])
+    # TXT pipeline extras
+    reasons          = result.get("decision_reasons", {})
+    passed_rules     = reasons.get("passed_rules", [])
+    failed_rules     = reasons.get("failed_rules", [])
+    exclusions       = reasons.get("exclusions_triggered", [])
+    dependent_rules  = reasons.get("dependent_rules_triggered", [])
 
     is_pass = (actual == expected)
 
     if is_pass:
         passed_count += 1
-        status_icon = "✅ PASS"
+        icon = "✅ PASS"
     else:
         failed_count += 1
-        status_icon = "❌ FAIL"
+        icon = "❌ FAIL"
         failed_details.append({
             "file": rel_path,
+            "pipeline": pipeline,
             "expected": expected,
             "actual": actual,
             "score": score,
+            "confidence": confidence,
+            "reason": reason,
             "passed_rules": passed_rules,
             "failed_rules": failed_rules,
             "exclusions_triggered": exclusions,
             "dependent_rules_triggered": dependent_rules,
         })
 
+    conf_str = f"  confidence: {confidence:.0%}" if confidence is not None else ""
+    print(f"  Pipeline : [{pipeline}]")
     print(f"  Expected : {expected}")
-    print(f"  Actual   : {actual}  (score: {score})")
-    print(f"  Result   : {status_icon}")
+    print(f"  Actual   : {actual}  (score: {score}{conf_str})")
+    if reason:
+        print(f"  Reason   : {reason}")
+    print(f"  Result   : {icon}")
     if note:
         print(f"  Note     : {note}")
     print()
@@ -151,6 +200,13 @@ for entry in expected_list:
 total    = passed_count + failed_count
 accuracy = (passed_count / total * 100) if total > 0 else 0.0
 
+# Split accuracy by pipeline type
+txt_tests  = [e for e in expected_list if not e["file"].endswith(".json")]
+json_tests = [e for e in expected_list if e["file"].endswith(".json")]
+fail_files = {d["file"] for d in failed_details}
+txt_pass   = sum(1 for e in txt_tests  if e["file"] not in fail_files)
+json_pass  = sum(1 for e in json_tests if e["file"] not in fail_files)
+
 print(SEPARATOR)
 print("  SUMMARY")
 print(SEPARATOR)
@@ -158,9 +214,13 @@ print(f"  Total tests : {total}")
 print(f"  Passed      : {passed_count}")
 print(f"  Failed      : {failed_count}")
 print(f"  Accuracy    : {accuracy:.1f}%")
+if txt_tests:
+    print(f"  TXT  tests  : {txt_pass}/{len(txt_tests)} passed ({txt_pass/len(txt_tests)*100:.0f}%)")
+if json_tests:
+    print(f"  JSON tests  : {json_pass}/{len(json_tests)} passed ({json_pass/len(json_tests)*100:.0f}%)")
 
 if accuracy >= 85:
-    grade = "🟢 EXCELLENT (≥ 85%)"
+    grade = "🟢 EXCELLENT  (≥ 85%)"
 elif accuracy >= 70:
     grade = "🟡 ACCEPTABLE (≥ 70%)"
 else:
@@ -179,9 +239,13 @@ if failed_details:
     print(SEPARATOR)
 
     for detail in failed_details:
-        print(f"\n  File     : {detail['file']}")
-        print(f"  Expected : {detail['expected']}")
-        print(f"  Actual   : {detail['actual']}  (score: {detail['score']})")
+        print(f"\n  File       : {detail['file']}  [{detail['pipeline']}]")
+        print(f"  Expected   : {detail['expected']}")
+        print(f"  Actual     : {detail['actual']}  (score: {detail['score']})")
+        if detail.get("confidence") is not None:
+            print(f"  Confidence : {detail['confidence']:.0%}")
+        if detail.get("reason"):
+            print(f"  Reason     : {detail['reason']}")
 
         if detail["exclusions_triggered"]:
             print("  Exclusions triggered:")
@@ -208,5 +272,4 @@ if failed_details:
 print(SEPARATOR)
 print()
 
-# Exit code: 0 = all passed, 1 = some failed
 sys.exit(0 if failed_count == 0 else 1)
