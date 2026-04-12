@@ -1,46 +1,46 @@
 [
   {
-    "file": "checks/simple.txt",
+    "file": "tests/fixtures/simple.txt",
     "expected": "GREEN",
     "note": "Solar energy, GHG reduction, filters, certificate, 25% building efficiency"
   },
   {
-    "file": "checks/bad.txt",
+    "file": "tests/fixtures/bad.txt",
     "expected": "NOT GREEN",
     "note": "Coal-based project + alcohol production = multiple exclusions triggered"
   },
   {
-    "file": "checks/medium.txt",
+    "file": "tests/fixtures/medium.txt",
     "expected": "NOT GREEN",
     "note": "Hydropower 15MW but no CO2 data, no certificate — insufficient score"
   },
   {
-    "file": "checks/tricky.txt",
+    "file": "tests/fixtures/tricky.txt",
     "expected": "NOT GREEN",
     "note": "Solar panels present but used for oil extraction — low score, no certificate"
   },
   {
-    "file": "checks/big_test.txt",
+    "file": "tests/fixtures/big_test.txt",
     "expected": "GREEN",
     "note": "Solar+wind station, LEED cert, 30% energy efficiency, CO2 85g/kWh reduction, water management — 5 green criteria clearly met"
   },
   {
-    "file": "checks/dependent.txt",
+    "file": "tests/fixtures/dependent.txt",
     "expected": "NOT GREEN",
     "note": "Hydro 20MW but CO2=90 g/kWh exceeds threshold — dependent rule triggered"
   },
   {
-    "file": "checks/real.txt",
+    "file": "tests/fixtures/real.txt",
     "expected": "NOT GREEN",
     "note": "Real bank application for food factory — not a green project, keyword false positives expected in balanced mode"
   },
   {
-    "file": "checks/real/fazo_group_esg.json",
+    "file": "tests/fixtures/real/fazo_group_esg.json",
     "expected": "NOT GREEN",
     "note": "Structured ESG JSON report — FAZO GROUP trikotaj, no green criteria met, JSON pipeline"
   },
   {
-    "file": "checks/real/context.json",
+    "file": "tests/fixtures/real/context.json",
     "expected": "GREEN",
     "note": "Real expert-approved green project: FAZO GROUP trikotaj — Davlat Ekologik Ekspertiza certificate + tashkil qilingan manba (organized emission sources) + quyosh energiya (105 solar panels)"
   }

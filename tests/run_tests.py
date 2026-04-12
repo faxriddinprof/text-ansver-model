@@ -66,8 +66,8 @@ LLM_CHAR_LIMIT = 20_000
 # ---------------------------------------------------------------------------
 
 BASE_DIR      = PROJECT_ROOT
-RULES_FILE    = os.path.join(PROJECT_ROOT, "src", "utils", "green_rules.json")
-EXPECTED_FILE = os.path.join(PROJECT_ROOT, "checks", "expected_results.json")
+RULES_FILE    = os.path.join(PROJECT_ROOT, "data", "green_rules.json")
+EXPECTED_FILE = os.path.join(PROJECT_ROOT, "tests", "expected_results.json")
 
 with open(RULES_FILE, encoding="utf-8") as f:
     rules_json = json.load(f)

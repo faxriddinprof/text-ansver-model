@@ -13,11 +13,11 @@ from src.utils.extractor import extract_data
 from src.utils.engine import evaluate
 
 # --- Load rules ---
-with open("src/utils/green_rules.json", encoding="utf-8") as f:
+with open(os.path.join(PROJECT_ROOT, "data", "green_rules.json"), encoding="utf-8") as f:
     rules_json = json.load(f)
 
 # --- Read test file ---
-text = read_txt("checks/simple.txt")
+text = read_txt(os.path.join(PROJECT_ROOT, "tests", "fixtures", "simple.txt"))
 
 # --- Extract features ---
 data = extract_data(text)
