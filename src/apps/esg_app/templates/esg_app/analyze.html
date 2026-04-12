@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESG Project Evaluator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f9;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  header {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  header .logo { font-size: 1.5rem; font-weight: 700; letter-spacing: .5px; }
+  header .sub  { font-size: .85rem; opacity: .65; }
+
+  /* ── Main layout ── */
+  main { max-width: 860px; margin: 36px auto; padding: 0 20px 60px; }
+
+  /* ── Card ── */
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 28px 32px;
+    margin-bottom: 22px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+  }
+  .card-title {
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 16px;
+  }
+
+  /* ── Upload form ── */
+  .upload-form label { display: block; margin-bottom: 8px; font-weight: 600; }
+  .upload-form input[type="file"] {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: .95rem;
+    transition: border-color .2s;
+  }
+  .upload-form input[type="file"]:hover { border-color: #3b82f6; }
+  .upload-form .help { font-size: .8rem; color: #888; margin-top: 6px; }
+  .btn {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 10px 28px;
+    background: #1a1a2e;
+    color: #fff;
+    border: none;
+    border-radius: 7px;
+    font-size: .95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .btn:hover { background: #2d2d5e; }
+
+  /* ── Error / field errors ── */
+  .alert {
+    background: #fef2f2;
+    border-left: 4px solid #ef4444;
+    color: #b91c1c;
+    padding: 12px 18px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    font-size: .92rem;
+  }
+  .field-error { color: #dc2626; font-size: .82rem; margin-top: 6px; }
+
+  /* ── Verdict banner ── */
+  .verdict-banner {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 24px 28px;
+    border-radius: 10px;
+    margin-bottom: 22px;
+  }
+  .verdict-banner.green { background: #dcfce7; border-left: 6px solid #16a34a; }
+  .verdict-banner.red   { background: #fee2e2; border-left: 6px solid #dc2626; }
+  .verdict-label {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: .5px;
+  }
+  .verdict-banner.green .verdict-label { color: #15803d; }
+  .verdict-banner.red   .verdict-label { color: #b91c1c; }
+  .verdict-sub { font-size: .9rem; opacity: .8; }
+
+  /* ── Score row ── */
+  .score-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .score-box {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px 20px;
+    text-align: center;
+  }
+  .score-box .val { font-size: 1.7rem; font-weight: 700; }
+  .score-box .lbl { font-size: .75rem; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+  .score-box .val.green { color: #16a34a; }
+  .score-box .val.red   { color: #dc2626; }
+  .score-box .val.amber { color: #d97706; }
+
+  /* ── Text blocks ── */
+  .section-label {
+    font-size: .72rem;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    margin-bottom: 5px;
+  }
+  .section-body {
+    font-size: .93rem;
+    line-height: 1.65;
+    color: #374151;
+    margin-bottom: 14px;
+  }
+
+  /* ── Criteria bars ── */
+  .criterion-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .criterion-row:last-child { border-bottom: none; }
+  .criterion-name { flex: 0 0 220px; font-size: .88rem; font-weight: 600; }
+  .bar-wrap { flex: 1; background: #e5e7eb; border-radius: 4px; height: 10px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+  .bar-fill.strong  { background: #16a34a; }
+  .bar-fill.partial { background: #f59e0b; }
+  .bar-fill.weak    { background: #ef4444; }
+  .criterion-score { flex: 0 0 36px; text-align: right; font-size: .85rem; font-weight: 700; }
+  .criterion-reason { flex: 1; font-size: .78rem; color: #6b7280; }
+
+  /* ── Tag pills ── */
+  .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .tag {
+    padding: 3px 10px;
+    border-radius: 99px;
+    font-size: .75rem;
+    font-weight: 600;
+  }
+  .tag.risk    { background: #fef3c7; color: #92400e; }
+  .tag.reject  { background: #fee2e2; color: #991b1b; }
+  .tag.audit   { background: #eff6ff; color: #1d4ed8; }
+  .tag.gw-low  { background: #dcfce7; color: #166534; }
+  .tag.gw-med  { background: #fef3c7; color: #92400e; }
+  .tag.gw-high { background: #fee2e2; color: #991b1b; }
+  .tag.gw-crit { background: #7f1d1d; color: #fff; }
+
+  /* ── Missing criteria ── */
+  .missing-item {
+    padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .missing-item:last-child { border-bottom: none; }
+  .missing-item .m-label { font-weight: 600; font-size: .88rem; }
+  .missing-item .m-guide { font-size: .82rem; color: #6b7280; margin-top: 3px; }
+  .missing-item .m-action { font-size: .8rem; color: #2563eb; margin-top: 3px; }
+
+  /* ── Collapsible JSON ── */
+  details summary {
+    cursor: pointer;
+    font-size: .85rem;
+    font-weight: 600;
+    color: #4b5563;
+    padding: 6px 0;
+    user-select: none;
+  }
+  details summary:hover { color: #1a1a2e; }
+  pre.json-block {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 20px;
+    border-radius: 8px;
+    font-size: .78rem;
+    overflow-x: auto;
+    margin-top: 10px;
+    line-height: 1.55;
+    max-height: 380px;
+    overflow-y: auto;
+  }
+
+  /* ── Confidence color ── */
+  .conf-high  { color: #16a34a; }
+  .conf-med   { color: #d97706; }
+  .conf-low   { color: #dc2626; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">🌿 ESG Project Evaluator</div>
+    <div class="sub">Green Finance Classification · Uzbekistan Order #286 · 2025</div>
+  </div>
+</header>
+
+<main>
+
+  {# ── Upload card ── #}
+  <div class="card">
+    <div class="card-title">Upload Project Document</div>
+
+    {% if error %}
+      <div class="alert">{{ error }}</div>
+    {% endif %}
+
+    <form class="upload-form" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <label for="id_file">Project description (.txt)</label>
+      {{ form.file }}
+      {% if form.file.errors %}
+        {% for e in form.file.errors %}
+          <div class="field-error">{{ e }}</div>
+        {% endfor %}
+      {% endif %}
+      <div class="help">Maximum file size: 5 MB. Plain text only.</div>
+      <button class="btn" type="submit">▶ Analyse</button>
+    </form>
+  </div>
+
+  {% if result %}
+
+  {# ── 1. Verdict banner ── #}
+  {% if result.verdict == "GREEN" %}
+  <div class="verdict-banner green">
+    <div>
+      <div class="verdict-label">✅ GREEN</div>
+      <div class="verdict-sub">This project meets green financing criteria.</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="verdict-banner red">
+    <div>
+      <div class="verdict-label">❌ NOT GREEN</div>
+      <div class="verdict-sub">This project does not qualify under current evidence.</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── 2. Score row ── #}
+  <div class="card">
+    <div class="card-title">Scores &amp; Confidence</div>
+    <div class="score-grid">
+
+      <div class="score-box">
+        {% if result.score >= result.threshold %}
+          <div class="val green">{{ result.score|floatformat:2 }}</div>
+        {% else %}
+          <div class="val red">{{ result.score|floatformat:2 }}</div>
+        {% endif %}
+        <div class="lbl">Evidence Score</div>
+      </div>
+
+      <div class="score-box">
+        <div class="val">{{ result.threshold|floatformat:1 }}</div>
+        <div class="lbl">Required Threshold</div>
+      </div>
+
+      <div class="score-box">
+        {% if result.confidence_pct >= 70 %}
+          <div class="val conf-high">{{ result.confidence_pct }}%</div>
+        {% elif result.confidence_pct >= 45 %}
+          <div class="val conf-med">{{ result.confidence_pct }}%</div>
+        {% else %}
+          <div class="val conf-low">{{ result.confidence_pct }}%</div>
+        {% endif %}
+        <div class="lbl">Confidence</div>
+      </div>
+
+    </div>
+  </div>
+
+  {# ── 3. Explanation ── #}
+  {% if result.explanation.why or result.explanation.missing or result.explanation.fix %}
+  <div class="card">
+    <div class="card-title">Decision Explanation</div>
+
+    {% if result.explanation.why %}
+      <div class="section-label">Why this verdict</div>
+      <div class="section-body">{{ result.explanation.why }}</div>
+    {% endif %}
+
+    {% if result.explanation.missing %}
+      <div class="section-label">What is missing</div>
+      <div class="section-body">{{ result.explanation.missing }}</div>
+    {% endif %}
+
+    {% if result.explanation.fix %}
+      <div class="section-label">What would make it GREEN</div>
+      <div class="section-body">{{ result.explanation.fix }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ── 4. Criteria breakdown ── #}
+  {% if result.breakdown %}
+  <div class="card">
+    <div class="card-title">Criteria Breakdown</div>
+    {% for c in result.breakdown %}
+    <div class="criterion-row">
+      <div class="criterion-name">{{ c.label }}</div>
+      <div class="bar-wrap">
+        {% if c.score >= 0.9 %}
+          <div class="bar-fill strong" style="width:{{ c.score_pct }}%"></div>
+        {% elif c.score >= 0.5 %}
+          <div class="bar-fill partial" style="width:{{ c.score_pct }}%"></div>
+        {% else %}
+          <div class="bar-fill weak" style="width:{{ c.score_pct }}%"></div>
+        {% endif %}
+      </div>
+      <div class="criterion-score">{{ c.score|floatformat:1 }}</div>
+      <div class="criterion-reason">{{ c.reason|truncatechars:90 }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# ── 5. Risks + Missing + Greenwashing ── #}
+  {% if result.risk_factors or result.missing or result.gw_level != "low" or result.rejected_flags or result.audit_notes %}
+  <div class="card">
+    <div class="card-title">Risks &amp; Gaps</div>
+
+    {% if result.gw_level != "low" %}
+      <div class="section-label">Greenwashing Risk</div>
+      <div class="tag-list" style="margin-bottom:14px">
+        <span class="tag gw-{{ result.gw_level }}">{{ result.gw_level|upper }} · score {{ result.gw_score|floatformat:2 }}</span>
+        {% for sig in result.gw_signals %}
+          <span class="tag gw-{{ result.gw_level }}">{{ sig }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if result.risk_factors %}
+      <div class="section-label">Risk Factors</div>
+      <div class="tag-list" style="margin-bottom:14px">
+        {% for rf in result.risk_factors %}
+          <span class="tag risk">{{ rf }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if result.missing %}
+      <div class="section-label">Missing Criteria</div>
+      {% for m in result.missing %}
+      <div class="missing-item">
+        <div class="m-label">{{ m.label }}</div>
+        {% if m.guidance %}<div class="m-guide">{{ m.guidance|truncatechars:120 }}</div>{% endif %}
+        {% if m.upgrade_action %}<div class="m-action">→ {{ m.upgrade_action|truncatechars:110 }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    {% endif %}
+
+    {% if result.rejected_flags %}
+      <div class="section-label" style="margin-top:14px">Corrected / Rejected Claims</div>
+      <div class="tag-list">
+        {% for rf in result.rejected_flags %}
+          <span class="tag reject">{{ rf }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if result.audit_notes %}
+      <div class="section-label" style="margin-top:14px">Audit Notes</div>
+      <div class="tag-list">
+        {% for n in result.audit_notes %}
+          <span class="tag audit">{{ n|truncatechars:80 }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+  </div>
+  {% endif %}
+
+  {# ── 6. Raw JSON ── #}
+  <div class="card">
+    <details>
+      <summary>Raw JSON result (record #{{ record_id }})</summary>
+      <pre class="json-block">{{ raw_json }}</pre>
+    </details>
+  </div>
+
+  {% endif %} {# end if result #}
+
+</main>
+</body>
+</html>
