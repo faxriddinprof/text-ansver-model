@@ -147,15 +147,19 @@ def run_txt_pipeline(file_path: str) -> dict:
             risk_facts   = esg.get("risk_factors", [])
             conf_pct     = esg.get("confidence", 50)
             crit_brkdown = esg.get("criterion_breakdown") or _build_score_breakdown(criteria)
+            gw_report    = esg.get("_gw_report_for_explanation", {})
+            adj_crit     = esg.get("_adj_crit_for_explanation", criteria)
             explanation  = _build_decision_explanation(
-                final_status, score, threshold, criteria, stop_facs,
+                final_status, score, threshold, adj_crit, stop_facs,
                 esg.get("rejected_flags", []),
+                greenwashing=gw_report or None,
             )
             risk_expl    = esg.get("risk_explanation") or _build_risk_explanation(risk_facts)
             amb_expl     = esg.get("ambiguity_explanation") or _build_ambiguity_explanation(amb_level, esg.get("rejected_flags", []))
             conf_expl    = esg.get("confidence_explanation") or _build_confidence_explanation(conf_pct, amb_level, esg.get("rejected_flags", []))
+            eq_scores    = esg.get("evidence_quality", {})
             missing_info = esg.get("missing_criteria") or _build_missing_criteria_explanation(
-                criteria, stop_facs, score, threshold
+                adj_crit, stop_facs, score, threshold, evidence_quality=eq_scores or None
             )
 
             return {
@@ -177,6 +181,11 @@ def run_txt_pipeline(file_path: str) -> dict:
                 "ambiguity_explanation": amb_expl,
                 "confidence_explanation":conf_expl,
                 "missing_criteria":      missing_info,
+                # Greenwashing / evidence quality
+                "greenwashing_risk_score":  esg.get("greenwashing_risk_score", 0.0),
+                "greenwashing_risk_level":  esg.get("greenwashing_risk_level", "low"),
+                "greenwashing_signals":     esg.get("greenwashing_signals", []),
+                "evidence_quality":         eq_scores,
                 "decision_reasons": {
                     "stop_factors":              stop_facs,
                     "green_criteria":            criteria,
@@ -399,11 +408,15 @@ for entry in expected_list:
     score_breakdown   = result.get("score_breakdown", {})
 
     # TXT pipeline extras
-    reasons          = result.get("decision_reasons", {})
-    passed_rules     = reasons.get("passed_rules", [])
-    failed_rules     = reasons.get("failed_rules", [])
-    exclusions       = reasons.get("exclusions_triggered", [])
-    dependent_rules  = reasons.get("dependent_rules_triggered", [])
+    reasons               = result.get("decision_reasons", {})
+    passed_rules          = reasons.get("passed_rules", [])
+    failed_rules          = reasons.get("failed_rules", [])
+    exclusions            = reasons.get("exclusions_triggered", [])
+    dependent_rules       = reasons.get("dependent_rules_triggered", [])
+    gw_risk_score         = result.get("greenwashing_risk_score", 0.0)
+    gw_risk_level         = result.get("greenwashing_risk_level", "low")
+    gw_signals            = result.get("greenwashing_signals", [])
+    evidence_quality      = result.get("evidence_quality", {})
 
     is_pass = (actual == expected)
 
@@ -458,6 +471,14 @@ for entry in expected_list:
     if validation_notes:
         for vn in validation_notes:
             print(f"  [audit]  : {vn}")
+    if gw_risk_level in ("medium", "high", "critical"):
+        sig_str = ", ".join(gw_signals) if gw_signals else ""
+        print(f"  Greenwash: [{gw_risk_level.upper()}] score={gw_risk_score:.2f}  signals: {sig_str}")
+    if evidence_quality:
+        low_eq = [(k, v) for k, v in evidence_quality.items() if isinstance(v, (int, float)) and v < 0.5]
+        if low_eq:
+            low_str = ", ".join(f"{k}={v:.2f}" for k, v in low_eq)
+            print(f"  LowEvidQ : {low_str}")
     print(f"  Result   : {icon}")
     if note:
         print(f"  Note     : {note}")

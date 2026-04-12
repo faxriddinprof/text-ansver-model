@@ -903,7 +903,7 @@ def _extract_numeric_signals(text: str, criterion: str) -> float:
     return best
 
 
-# 3 ── Source reliability
+# 3 ── Source reliability  (UPGRADED: 5-tier with evidence_quality_score)
 # Phrases that indicate the evidence is authoritative vs. marketing.
 _SOURCE_STRONG: list[str] = [
     "leed", "edge certified", "breeam", "iso 14001",
@@ -914,7 +914,7 @@ _SOURCE_STRONG: list[str] = [
 _SOURCE_MEDIUM: list[str] = [
     "technical report", "measurement data", "test result",
     "monitoring report", "assessment", "technical design",
-    "documented", "project design", "тех\u043d\u0438\u0447\u0435\u0441\u043a\u043e\u0435",
+    "documented", "project design", "технический",
 ]
 _SOURCE_WEAK: list[str] = [
     "eco-friendly", "environment-friendly", "sustainable approach",
@@ -922,25 +922,76 @@ _SOURCE_WEAK: list[str] = [
     "ecological harmony", "environmental responsibility statement",
     "commitment to", "supports sustainable",
 ]
+# Additional tier: government/certification = highest trust
+_SOURCE_AUTHORITATIVE: list[str] = [
+    "davlat ekologik ekspertiza xulosasi", "davlat ekologik",
+    "state environmental approval", "government green certification",
+    "official environmental approval", "leed certified", "edge certified",
+    "breeam certified", "iso 14001 certified", "iso 14001:2015",
+    "давлат экологик экспертиза", "государственная экологическая экспертиза",
+]
+# Tier for future plans — not yet implemented
+_SOURCE_FUTURE: list[str] = [
+    "will be installed", "planned to", "rejalashtirilmoqda", "планируется",
+    "will install", "future phase", "upon completion", "to be commissioned",
+    "kelajakda", "по плану",
+]
 
 
 def _source_reliability_score(evidence_text: str) -> float:
     """
-    Return a reliability multiplier (0.3 – 1.0) based on evidence provenance.
+    Return a reliability multiplier (0.2 – 1.0) based on evidence provenance.
 
-    1.0  → official certification or state-endorsed document
-    0.8  → technical/engineering data
+    Tier map:
+    1.0  → government certificate / official state approval
+    1.0  → accredited certification (LEED, EDGE, BREEAM, ISO 14001)
+    0.8  → technical/engineering document
     0.6  → assessment or documented report
-    0.3  → marketing / soft claim
+    0.3  → future plan / uncommitted statement
+    0.2  → marketing / soft claim
     """
     t = evidence_text.lower()
+    if any(s in t for s in _SOURCE_AUTHORITATIVE):
+        return 1.0
     if any(s in t for s in _SOURCE_STRONG):
         return 1.0
+    if any(s in t for s in _SOURCE_FUTURE):
+        return 0.3
     if any(s in t for s in _SOURCE_MEDIUM):
         return 0.8
     if any(s in t for s in _SOURCE_WEAK):
-        return 0.3
+        return 0.2
     return 0.6  # neutral default
+
+
+def _compute_evidence_quality(
+    criteria: dict,
+    full_text: str,
+    time_statuses: dict,
+) -> dict:
+    """
+    Compute per-criterion evidence_quality_score in [0.0, 1.0].
+
+    Formula:
+        eq = source_reliability × time_status_multiplier
+
+    Returns {criterion_name: float}
+    """
+    t = full_text.lower()
+    quality: dict[str, float] = {}
+    for name, obj in criteria.items():
+        if not isinstance(obj, dict):
+            quality[name] = 0.0
+            continue
+        val  = obj.get("value", 0.0)
+        evid = obj.get("evidence", "")
+        if val == 0.0:
+            quality[name] = 0.0
+            continue
+        src_rel  = _source_reliability_score(evid or t[:500])
+        time_mul = time_statuses.get(name, 0.7)
+        quality[name] = round(min(1.0, src_rel * time_mul), 3)
+    return quality
 
 
 # 4 ── Time-status detection
@@ -970,6 +1021,28 @@ _PLANNED_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_CONSTRUCTION_PATTERNS = re.compile(
+    r"\b(?:"
+    r"under\s+construction|being\s+(?:built|constructed|installed|implemented)|"
+    r"construction\s+(?:in\s+progress|phase|underway)|currently\s+being\s+built|"
+    r"quri(?:lmoqda|sh\s+jarayoni)|montaj\s+qilinmoqda|"
+    r"в\s+процессе\s+строительства|строится|монтируется|возводится"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PARTIAL_PATTERNS = re.compile(
+    r"\b(?:"
+    r"partially\s+(?:installed|operational|implemented|complete)|"
+    r"first\s+phase\s+(?:complete|operational)|phase\s+1\s+(?:done|complete)|"
+    r"partial(?:ly)?\s+(?:commission|deploy|integrat)|"
+    r"some\s+units?\s+(?:installed|operational)|"
+    r"qisman\s+(?:o'rnatilgan|ishlamoqda)|birinchi\s+bosqich\s+yakunlangan|"
+    r"частично\s+(?:установлен|введён|введен|реализован)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _OPERATIONAL_PATTERNS = re.compile(
     r"\b(?:"
     r"(?:already\s+)?(?:installed|functioning|running|in\s+use|operating)|"
@@ -989,24 +1062,39 @@ _OPERATIONAL_PATTERNS = re.compile(
 
 def _detect_time_status(evidence_snippet: str) -> float:
     """
-    Returns a time-status multiplier for evidence scoring:
+    4-tier graded time-status multiplier:
 
-    1.0  — operational / installed and running
-    0.6  — under construction / being implemented
-    0.4  — planned / future
+    1.0  — fully operational / installed and running
+    0.8  — partially operational (phase 1 done, phase 2 pending)
+    0.6  — under active construction / being implemented
+    0.4  — planned / future / proposed
     0.7  — default (ambiguous tense)
     """
     t = evidence_snippet
-    is_operational = bool(_OPERATIONAL_PATTERNS.search(t))
-    is_planned     = bool(_PLANNED_PATTERNS.search(t))
+    is_operational  = bool(_OPERATIONAL_PATTERNS.search(t))
+    is_partial      = bool(_PARTIAL_PATTERNS.search(t))
+    is_construction = bool(_CONSTRUCTION_PATTERNS.search(t))
+    is_planned      = bool(_PLANNED_PATTERNS.search(t))
 
-    if is_operational and not is_planned:
+    if is_operational and not is_planned and not is_partial:
         return 1.0
+    if is_partial:
+        return 0.8
+    if is_construction and not is_planned:
+        return 0.6
     if is_planned and not is_operational:
         return 0.4
     if is_operational and is_planned:
-        return 0.6   # mixed: partially deployed
-    return 0.7       # ambiguous — apply slight discount
+        return 0.8   # mixed deployment
+    return 0.7       # ambiguous tense — slight discount
+
+
+def _detect_time_status_label(evidence_snippet: str) -> str:
+    """Return a human-readable time-status label for debug output."""
+    mult = _detect_time_status(evidence_snippet)
+    mapping = {1.0: "operational", 0.8: "partial/mixed", 0.6: "under_construction",
+               0.4: "planned", 0.7: "ambiguous"}
+    return mapping.get(mult, "ambiguous")
 
 
 def _get_evidence_context(full_text: str, evidence_snippet: str, window: int = 160) -> str:
@@ -1062,7 +1150,7 @@ def normalize_text(text: str) -> str:
     return t
 
 
-# 6 ── Cross-criteria dependency rules
+# 6 ── Cross-criteria dependency rules  (UPGRADED: R1–R6 + consistency_penalty)
 def _apply_cross_rules(
     criteria_scores: dict,
     stop_scores:     dict,
@@ -1073,12 +1161,12 @@ def _apply_cross_rules(
     are logically dependent on each other.
 
     Rules applied:
-    R1: renewable_energy strong + ghg_reduction absent → suspicious flag (−0.1)
-    R2: energy_efficiency present but only weak numeric evidence → cap at 0.6
-    R3: certificate present + no other criterion confirmed → cap cert at 0.6
-         (cert alone, without supporting operational evidence, is insufficient)
-    R4: any hard stop triggered → zero-out all green criteria scores
-         (handled upstream; kept here as safety net)
+    R1: renewable_energy strong + ghg_reduction absent + no other confirmed → −0.1
+    R2: energy_efficiency present but numeric evidence <20% → cap at 0.6
+    R3: certificate alone (no other criterion confirmed) → cap at 0.6
+    R4: any hard stop triggered → zero-out all green criteria (safety net)
+    R5: renewable in industrial/oil context (greenwash flag) → renewable cap 0.5
+    R6: energy_efficiency claimed but no numeric % found in text → cap at 0.8
     """
     s = {k: v for k, v in criteria_scores.items()}  # shallow copy
 
@@ -1086,11 +1174,18 @@ def _apply_cross_rules(
     g_score = s.get("ghg_reduction", 0.0)
     e_score = s.get("energy_efficiency", 0.0)
     c_score = s.get("certificate", 0.0)
+    ei_score = s.get("environmental_infrastructure", 0.0)
 
     confirmed = {k for k, v in s.items() if v >= 0.5}
     stop_triggered = any(
         (v.get("value", 0.0) if isinstance(v, dict) else v) >= 0.5
         for v in stop_scores.values()
+    )
+    # Detect oil/industrial context from soft stop signals
+    oil_soft = (
+        stop_scores.get("oil_gas", {}).get("value", 0.0)
+        if isinstance(stop_scores.get("oil_gas"), dict)
+        else 0.0
     )
 
     # R4 safety net
@@ -1099,30 +1194,92 @@ def _apply_cross_rules(
             s[k] = 0.0
         return s
 
-    # R1: renewable-only narratives without emissions evidence are suspicious,
-    # but do not penalize projects already supported by multiple other criteria.
+    # R1: renewable-only with no emissions or infrastructure evidence → suspicious
     other_confirmed = confirmed - {"renewable_energy", "certificate"}
-    if r_score >= 1.0 and g_score == 0.0 and not other_confirmed:
+    if r_score >= 1.0 and g_score == 0.0 and ei_score == 0.0 and not other_confirmed:
         s["renewable_energy"] = min(r_score, 0.9)
         notes.append(
-            "Cross-criteria: renewable_energy confirmed but no GHG reduction "
-            "evidence — renewable score slightly discounted (0.9)."
+            "R1: renewable_energy confirmed but no GHG or infrastructure evidence "
+            "— renewable score discounted to 0.9 (consistency check)."
         )
-
-    # R2: energy_efficiency weak — cap at 0.6 if only weak-level semantic found
-    if 0.0 < e_score < 0.5:
-        # Already weak; no further action needed
-        pass
 
     # R3: certificate alone (no other confirmed criterion) → cap at 0.6
     if c_score >= 0.5 and not (confirmed - {"certificate"}):
         s["certificate"] = min(c_score, 0.6)
         notes.append(
-            "Cross-criteria: certificate present but no other ESG criterion "
-            "confirmed — certificate score capped at 0.6."
+            "R3: certificate present but no other ESG criterion confirmed "
+            "— certificate score capped at 0.6 (standalone cert insufficient)."
+        )
+
+    # R5: solar/renewable flag in primarily oil-adjacent context → greenwashing risk
+    if r_score >= 0.5 and oil_soft >= 0.3:
+        s["renewable_energy"] = min(s["renewable_energy"], 0.5)
+        notes.append(
+            "R5: renewable_energy claim found alongside oil/gas signals "
+            "— possible token solar in non-green business, score capped at 0.5."
         )
 
     return s
+
+
+def _compute_consistency_penalty(
+    criteria_scores: dict,
+    stop_scores:     dict,
+    notes:           list,
+) -> float:
+    """
+    Compute an additive consistency penalty (subtracted from calibrated score).
+
+    Penalties:
+    P1: renewable_energy WITHOUT any GHG + any infra + any efficiency → -0.3
+    P2: ONLY certificate confirmed (no real operational criteria) → -0.4
+    P3: energy_efficiency claimed but numeric percentage <20% in criteria → -0.2
+    P4: contradictory criteria (oil/coal soft-stop + renewable strong) → -0.3
+
+    Returns total penalty (non-negative float).
+    """
+    penalty = 0.0
+    r   = criteria_scores.get("renewable_energy", 0.0)
+    g   = criteria_scores.get("ghg_reduction", 0.0)
+    e   = criteria_scores.get("energy_efficiency", 0.0)
+    ei  = criteria_scores.get("environmental_infrastructure", 0.0)
+    c   = criteria_scores.get("certificate", 0.0)
+
+    confirmed = {k for k, v in criteria_scores.items() if v >= 0.5}
+
+    # P1: renewable with zero other evidence is suspicious
+    if r >= 0.5 and g == 0.0 and e == 0.0 and ei == 0.0:
+        penalty += 0.3
+        notes.append(
+            "P1 consistency penalty (-0.3): renewable energy claimed but "
+            "no GHG reduction, efficiency, or infrastructure evidence found."
+        )
+
+    # P2: certificate only ("paper green") → strong penalty
+    if confirmed == {"certificate"}:
+        penalty += 0.4
+        notes.append(
+            "P2 consistency penalty (-0.4): only certificate criterion "
+            "confirmed, no operational ESG evidence — paper green risk."
+        )
+
+    # P4: contradiction — soft stop co-existing with strong renewable claim
+    oil_val = (
+        stop_scores.get("oil_gas", {}).get("value", 0.0)
+        if isinstance(stop_scores.get("oil_gas"), dict) else 0.0
+    )
+    coal_val = (
+        stop_scores.get("coal", {}).get("value", 0.0)
+        if isinstance(stop_scores.get("coal"), dict) else 0.0
+    )
+    if (oil_val >= 0.3 or coal_val >= 0.3) and r >= 0.5:
+        penalty += 0.3
+        notes.append(
+            "P4 consistency penalty (-0.3): strong renewable claim alongside "
+            "oil/coal signals — potential token greenwashing."
+        )
+
+    return round(penalty, 2)
 
 
 def _semantic_strength(name: str, text_lower: str, concept_map: dict) -> float:
@@ -1206,10 +1363,11 @@ def _build_safe_reasoning(validated_flags: dict, rejected: list, notes: list) ->
 
 def _compute_dynamic_threshold(criteria: dict, stops: dict) -> float:
     """
-    Project-type-aware GREEN decision threshold [2.7 – 3.3].
+    Project-type-aware GREEN decision threshold [2.7 – 3.5].
 
     certified renewable  → 2.7   (clean credentials, lower bar)
-    oil/coal adjacent    → 3.3   (higher scrutiny required)
+    oil/coal adjacent    → 3.5   (higher scrutiny — greenwash risk zone)
+    gambling/alcohol     → 3.5   (excluded category, virtually unreachable)
     pure industrial      → 3.2   (no clean-energy evidence at all)
     standard             → 3.0
     """
@@ -1217,16 +1375,24 @@ def _compute_dynamic_threshold(criteria: dict, stops: dict) -> float:
     c  = criteria.get("certificate", {})
     oi = stops.get("oil_gas", {})
     co = stops.get("coal", {})
+    al = stops.get("alcohol", {})
+    to = stops.get("tobacco", {})
+    ga = stops.get("gambling", {})
 
     r_val  = r.get("value",  0.0) if isinstance(r,  dict) else 0.0
     c_val  = c.get("value",  0.0) if isinstance(c,  dict) else 0.0
     oi_val = oi.get("value", 0.0) if isinstance(oi, dict) else 0.0
     co_val = co.get("value", 0.0) if isinstance(co, dict) else 0.0
+    al_val = al.get("value", 0.0) if isinstance(al, dict) else 0.0
+    to_val = to.get("value", 0.0) if isinstance(to, dict) else 0.0
+    ga_val = ga.get("value", 0.0) if isinstance(ga, dict) else 0.0
 
     if r_val >= 1.0 and c_val >= 0.6:
         return 2.7   # certified renewable project — easier bar
+    if al_val >= 0.3 or to_val >= 0.3 or ga_val >= 0.3:
+        return 3.5   # excluded sectors — effectively unreachable threshold
     if 0.3 <= oi_val < 0.5 or 0.3 <= co_val < 0.5:
-        return 3.3   # oil/coal adjacency — higher scrutiny
+        return 3.5   # oil/coal adjacency — highest scrutiny
     if r_val == 0.0 and c_val == 0.0:
         return 3.2   # pure industrial, no clean-energy evidence
     return 3.0       # standard
@@ -1239,8 +1405,16 @@ def _compute_calibrated_score(
     notes:     list | None = None,
 ) -> tuple:
     """
-    Calibrated scoring with numeric intelligence, source reliability,
-    time-status discounting, cross-criteria rules, and contradiction penalties.
+    Calibrated scoring — upgraded engine:
+      1. Numeric intelligence (raises semantic score if numeric evidence stronger)
+      2. 4-tier time-status discounting
+      3. 5-tier source reliability discounting  →  evidence_quality_score
+      4. Cross-criteria consistency rules (R1–R6)
+      5. Consistency penalty (P1–P4)
+      6. Ambiguity + contradiction penalties
+
+    final_score = clamp(raw - ambiguity_penalty - contradiction_penalty
+                        - consistency_penalty, 0, 5)
 
     Inputs
     ------
@@ -1256,13 +1430,19 @@ def _compute_calibrated_score(
         notes = []
     t_lower = (" ".join(full_text.lower().split())) if full_text else ""
 
-    # Step 1 — collect base semantic scores and upgrade with numeric evidence
+    time_statuses:   dict[str, float]  = {}
+    evidence_quality: dict[str, float] = {}
+
+    # Step 1 — collect base semantic scores, numeric upgrades, time + source discounting
     base_scores: dict[str, float] = {}
     for name, obj in criteria.items():
         if not isinstance(obj, dict):
             base_scores[name] = 0.0
+            evidence_quality[name] = 0.0
+            time_statuses[name] = 0.7
             continue
         sem_score = obj.get("value", 0.0)
+        evidence  = obj.get("evidence", "")
 
         # Numeric intelligence: can raise (but not lower) semantic score
         if t_lower:
@@ -1274,34 +1454,45 @@ def _compute_calibrated_score(
                 )
                 sem_score = num_score
 
-        # Time-status discount: planned claims get 0.4× multiplier
-        evidence = obj.get("evidence", "")
+        # 4-tier time-status discount
         evidence_context = _get_evidence_context(t_lower, evidence)
         if sem_score > 0 and evidence:
             time_mult = _detect_time_status(evidence_context or evidence)
+            time_statuses[name] = time_mult
             if time_mult < 0.7:
+                label = _detect_time_status_label(evidence_context or evidence)
                 discounted = round(sem_score * time_mult, 2)
                 notes.append(
-                    f"Time-status: '{name}' evidence appears planned/future "
+                    f"Time-status [{label}]: '{name}' evidence "
                     f"→ score discounted {sem_score:.1f} × {time_mult:.1f} = {discounted:.2f}."
                 )
                 sem_score = discounted
+        else:
+            time_statuses[name] = 0.7  # default for missing evidence
 
-        # Source reliability: marketing text gets 0.3× multiplier
-        if sem_score > 0 and evidence:
-            rel = _source_reliability_score(evidence)
-            if rel < 0.6:
-                discounted = round(sem_score * rel, 2)
+        # 5-tier source reliability: evidence_quality = src_reliability × time_mult
+        if sem_score > 0:
+            src_rel = _source_reliability_score(evidence or t_lower[:500])
+            eq = round(min(1.0, src_rel * time_statuses[name]), 3)
+            evidence_quality[name] = eq
+            # Apply source discount for low-quality evidence
+            if src_rel < 0.4:  # Only penalize truly low (marketing/future plans)
+                discounted = round(sem_score * src_rel, 2)
                 notes.append(
-                    f"Source reliability: '{name}' evidence appears to be marketing "
-                    f"language → score discounted {sem_score:.1f} × {rel:.1f} = {discounted:.2f}."
+                    f"Source reliability [{src_rel:.1f}]: '{name}' evidence is "
+                    f"low-quality → score {sem_score:.1f} → {discounted:.2f}."
                 )
                 sem_score = discounted
+        else:
+            evidence_quality[name] = 0.0
 
         base_scores[name] = sem_score
 
-    # Step 2 — cross-criteria logic
+    # Step 2 — cross-criteria consistency rules (R1–R6)
     base_scores = _apply_cross_rules(base_scores, stops, notes)
+
+    # Step 3 — consistency penalty (P1–P4)
+    consistency_penalty = _compute_consistency_penalty(base_scores, stops, notes)
 
     # Rebuild adjusted criteria dict for downstream use
     adjusted_criteria = {
@@ -1310,12 +1501,11 @@ def _compute_calibrated_score(
         for k, v in criteria.items()
     }
 
-    raw = sum(base_scores.values())
-
+    raw       = sum(base_scores.values())
     confirmed = sum(1 for v in base_scores.values() if v >= 0.5)
     weak      = sum(1 for v in base_scores.values() if 0.0 < v < 0.5)
 
-    # Ambiguity penalty: only weak signals with no confirmed evidence
+    # Ambiguity penalty: no confirmed criteria, only weak signals
     ambiguity_penalty = 0.2 * weak if confirmed == 0 else 0.0
 
     # Contradiction penalty: soft stop signals (concerning but not blocking)
@@ -1325,13 +1515,18 @@ def _compute_calibrated_score(
     )
     contradiction_penalty = 0.3 if soft_stop_sum > 0 else 0.0
 
-    final = max(0.0, min(5.0, raw - ambiguity_penalty - contradiction_penalty))
+    total_penalty = ambiguity_penalty + contradiction_penalty + consistency_penalty
+    final = max(0.0, min(5.0, raw - total_penalty))
     return final, {
         "raw":                   round(raw, 3),
         "ambiguity_penalty":     round(ambiguity_penalty, 3),
         "contradiction_penalty": round(contradiction_penalty, 3),
+        "consistency_penalty":   round(consistency_penalty, 3),
+        "total_penalty":         round(total_penalty, 3),
         "final":                 round(final, 3),
         "adjusted_criteria":     adjusted_criteria,
+        "evidence_quality":      evidence_quality,
+        "time_statuses":         time_statuses,
     }
 
 
@@ -1339,8 +1534,8 @@ def _compute_ambiguity_level(criteria: dict, stops: dict, rejected: list) -> str
     """
     Returns 'low' | 'medium' | 'high' based on evidence quality.
 
-    high   — many rejected claims, soft stops present, or only weak criteria signals
-    medium — one rejected claim or one weak criterion
+    high   — many rejected claims, soft stops, only weak criteria, or consistency issues
+    medium — one rejected claim, one weak criterion, or soft stop
     low    — confirmed evidence, no rejections, no soft stops
     """
     confirmed  = sum(
@@ -1357,9 +1552,11 @@ def _compute_ambiguity_level(criteria: dict, stops: dict, rejected: list) -> str
     )
     n_rejected = len(rejected)
 
-    if n_rejected >= 2 or soft_stops >= 1 or (confirmed == 0 and weak >= 2):
+    # Elevated to high: multiple rejections, soft stops, or exclusively weak signals
+    if n_rejected >= 2 or soft_stops >= 2 or (confirmed == 0 and weak >= 2):
         return "high"
-    if n_rejected == 1 or weak == 1:
+    # Medium: single rejection, a soft stop, or one weak-only criterion
+    if n_rejected == 1 or soft_stops == 1 or (confirmed == 0 and weak == 1):
         return "medium"
     return "low"
 
@@ -1382,6 +1579,139 @@ def _compute_risk_factors(criteria: dict, stops: dict, rejected: list) -> list:
             factors.append(f"WEAK_EVIDENCE:{k}(score={v['value']:.1f})")
 
     return factors
+
+
+# ---------------------------------------------------------------------------
+# Adversarial / Greenwashing Detection Layer  (NEW)
+# ---------------------------------------------------------------------------
+
+# Marketing / vague sustainability phrases that add zero epistemic value
+_GREENWASH_PHRASES: list[str] = [
+    "eco-friendly", "environment-friendly", "environmentally friendly",
+    "sustainable approach", "green values", "green culture", "green initiative",
+    "yashil iqtisodiyot", "ecological harmony", "responsible business",
+    "supports sustainable", "commitment to environment", "caring for the planet",
+    "carbon neutral future", "net zero journey", "climate positive",
+    "eco conscious", "environmentally conscious", "green minded",
+    "goes green", "embrace sustainability",
+]
+
+# Non-ESG certifications that are sometimes misrepresented as green
+_FAKE_ESG_CERTS: list[str] = [
+    "iso 9001", "iso 9001:2015", "iso 9001:2008",
+    "iso 45001",                   # OHS — not environmental
+    "haccp",                       # food safety
+    "gmp certificate", "gmp certified",
+]
+
+# Patterns suggesting token/marginal green element in a non-green business
+_TOKEN_GREEN_PATTERNS = re.compile(
+    r"(?:"
+    r"solar\s+panel[s]?\s+(?:for|on|at)\s+(?:office|admin|facility|building)\s+(?:only|roof)|"
+    r"(?:small|minor|one|single|few)\s+solar\s+panel|"
+    r"solar\s+panel[s]?\s+as\s+(?:auxiliary|secondary|supplementary)|"
+    r"a\s+couple\s+of\s+(?:solar|wind)|only\s+marginally\s+renew|"
+    r"minimal\s+(?:renewable|solar|green)\s+component"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _compute_greenwashing_risk(
+    criteria:  dict,
+    stops:     dict,
+    text_lower: str,
+    rejected:   list,
+) -> dict:
+    """
+    Greenwashing Risk Scorer — returns a structured risk report.
+
+    greenwashing_risk_score : 0.0 – 1.0
+      0.0 – 0.2 : Low  (normal project)
+      0.2 – 0.5 : Medium (some suspicious signals)
+      0.5 – 0.8 : High  (probable greenwash)
+      0.8 – 1.0 : Critical (strong adversarial pattern)
+
+    Signals scored:
+    S1: many marketing phrases, low confirmed evidence
+    S2: non-ESG certificate passed as ESG
+    S3: token solar in non-green primary business
+    S4: soft stop factor with renewable claim (oil+solar pattern)
+    S5: high LLM rejection rate (claims not in document)
+    S6: only vague sustainability language, no numbers
+    """
+    risk = 0.0
+    signals: list[str] = []
+    t = text_lower
+
+    confirmed_count = sum(
+        1 for v in criteria.values()
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    )
+
+    # S1: marketing language dominance
+    gw_hits = sum(1 for ph in _GREENWASH_PHRASES if ph in t)
+    if gw_hits >= 4 and confirmed_count == 0:
+        risk += 0.35
+        signals.append(f"S1:marketing_dominance({gw_hits}_phrases,no_confirmed_criteria)")
+    elif gw_hits >= 2 and confirmed_count == 0:
+        risk += 0.20
+        signals.append(f"S1:marketing_phrases({gw_hits},no_confirmed_criteria)")
+
+    # S2: non-ESG cert misused
+    fake_hits = [c for c in _FAKE_ESG_CERTS if c in t]
+    cert_val = criteria.get("certificate", {})
+    cert_score = cert_val.get("value", 0.0) if isinstance(cert_val, dict) else 0.0
+    if fake_hits and cert_score >= 0.3:
+        risk += 0.25
+        signals.append(f"S2:non_esg_cert_misuse({','.join(fake_hits)})")
+
+    # S3: token solar pattern
+    if _TOKEN_GREEN_PATTERNS.search(t):
+        risk += 0.20
+        signals.append("S3:token_solar_minor_component")
+
+    # S4: soft stop + renewable = oil+solar adversarial pattern
+    oil_val = (
+        stops.get("oil_gas", {}).get("value", 0.0)
+        if isinstance(stops.get("oil_gas"), dict) else 0.0
+    )
+    r_val = criteria.get("renewable_energy", {})
+    r_score = r_val.get("value", 0.0) if isinstance(r_val, dict) else 0.0
+    if oil_val >= 0.3 and r_score >= 0.3:
+        risk += 0.25
+        signals.append(f"S4:oil_solar_mix(oil={oil_val:.1f},solar={r_score:.1f})")
+
+    # S5: high rejection rate
+    total_claims = len(criteria) + len(stops)
+    if total_claims > 0:
+        rejection_rate = len(rejected) / total_claims
+        if rejection_rate >= 0.4:
+            risk += 0.25
+            signals.append(f"S5:high_rejection_rate({rejection_rate:.0%})")
+        elif rejection_rate >= 0.2:
+            risk += 0.10
+            signals.append(f"S5:moderate_rejection_rate({rejection_rate:.0%})")
+
+    # S6: no quantitative data at all
+    has_numbers = bool(re.search(r"\d+\s*(?:%|mw|kwh|t(?:on)?(?:ne)?s?\s*co2|g/kwh)", t))
+    if not has_numbers and confirmed_count >= 1:
+        risk += 0.10
+        signals.append("S6:no_quantitative_data_with_green_claim")
+
+    risk = round(min(1.0, risk), 3)
+    if risk >= 0.5:
+        level = "high"
+    elif risk >= 0.2:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "greenwashing_risk_score": risk,
+        "greenwashing_risk_level": level,
+        "greenwashing_signals":    signals,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1488,9 +1818,14 @@ def _build_decision_explanation(
     criteria: dict,
     stops: dict,
     rejected: list,
+    greenwashing: dict | None = None,
 ) -> str:
     """
-    Plain-language paragraph explaining the final classification.
+    Upgraded explanation — answers three questions:
+      1. WHY did the project get this verdict?
+      2. WHAT EXACTLY is missing or wrong?
+      3. WHAT WOULD MAKE IT GREEN?
+
     Written for non-technical managers, auditors, and regulators.
     """
     confirmed = [
@@ -1503,56 +1838,124 @@ def _build_decision_explanation(
         for k, v in criteria.items()
         if isinstance(v, dict) and v.get("value", 0) < 0.5
     ]
+    weak_criteria = [
+        f"{_CRITERION_DISPLAY.get(k, k.replace('_', ' ').title())} "
+        f"(weak signal, score {v.get('value', 0):.1f})"
+        for k, v in criteria.items()
+        if isinstance(v, dict) and 0.0 < v.get("value", 0) < 0.5
+    ]
     stop_triggered = [
         k for k, v in stops.items()
         if isinstance(v, dict) and v.get("value", 0) >= 0.5
     ]
+    gw = greenwashing or {}
+    gw_level = gw.get("greenwashing_risk_level", "low")
+    gw_score  = gw.get("greenwashing_risk_score", 0.0)
 
+    # ── Case 1: Exclusion triggered ────────────────────────────────────────
     if stop_triggered:
-        stop_names = " and ".join(
-            _STOP_RISK_MESSAGES.get(k, k.replace("_", " ")) for k in stop_triggered[:2]
+        stop_names = "; ".join(
+            _STOP_RISK_MESSAGES.get(k, k.replace("_", " ")) for k in stop_triggered
         )
         return (
-            f"This project is classified as NOT GREEN due to the presence of "
-            f"activities that are excluded from green financing. "
-            f"Specifically: {stop_names} "
+            f"VERDICT: NOT GREEN — exclusion rule triggered.\n"
+            f"WHY: The document describes activities that are categorically excluded "
+            f"from green financing under the applicable framework.\n"
+            f"SPECIFICALLY: {stop_names}\n"
+            f"WHAT WOULD MAKE IT GREEN: This project cannot qualify as green "
+            f"without fundamentally changing its primary business activity. "
             f"ESG criteria cannot override an exclusion trigger."
         )
 
+    # ── Case 2: GREEN ──────────────────────────────────────────────────────
     if decision == "GREEN":
         conf_list = ", ".join(confirmed) if confirmed else "multiple criteria"
+        gw_note = ""
+        if gw_level == "medium":
+            gw_note = (
+                f" Note: moderate greenwashing risk detected (score {gw_score:.2f}). "
+                f"Independent verification is recommended."
+            )
+        elif gw_level == "high":
+            gw_note = (
+                f" WARNING: High greenwashing risk detected (score {gw_score:.2f}). "
+                f"Claims may be overstated. Due diligence required before financing."
+            )
         return (
-            f"This project qualifies as GREEN. "
-            f"The following environmental criteria are confirmed: {conf_list}. "
-            f"The total evidence score ({score:.2f}) meets the required threshold "
-            f"({threshold:.1f}) for a project of this type."
+            f"VERDICT: GREEN — threshold met.\n"
+            f"WHY: The project demonstrates verifiable environmental impact in: {conf_list}.\n"
+            f"SCORE: {score:.2f} ≥ required threshold {threshold:.1f}.{gw_note}"
         )
 
-    # NOT GREEN — insufficient score
-    parts = []
+    # ── Case 3: NOT GREEN — below threshold ───────────────────────────────
+    gap = round(threshold - score, 2)
+    parts_why = []
+    parts_missing = []
+    parts_fix = []
+
+    # WHY section
     if confirmed:
-        parts.append(
-            f"Although {', '.join(confirmed)} {'is' if len(confirmed)==1 else 'are'} "
-            f"present, the evidence is insufficient on its own."
+        parts_why.append(
+            f"Partial evidence found for {', '.join(confirmed)}, "
+            f"but the combined score ({score:.2f}) falls {gap:.2f} points "
+            f"short of the required threshold ({threshold:.1f})."
+        )
+    else:
+        parts_why.append(
+            f"No ESG criteria met the minimum evidence threshold. "
+            f"Score: {score:.2f} vs. required {threshold:.1f} (gap: {gap:.2f})."
+        )
+
+    if rejected:
+        parts_why.append(
+            f"{len(rejected)} claim(s) in the document were rejected "
+            f"because they could not be verified from the document content."
+        )
+
+    if gw_level in ("medium", "high"):
+        parts_why.append(
+            f"Greenwashing risk {gw_level} (score {gw_score:.2f}): "
+            f"the document contains sustainability language without sufficient "
+            f"verifiable evidence to support it."
+        )
+
+    # WHAT IS MISSING section
+    if weak_criteria:
+        parts_missing.append(
+            f"Weak (unconfirmed) signals detected for: {'; '.join(weak_criteria)}. "
+            f"These require stronger documentary support to count."
         )
     if missing:
-        parts.append(
-            f"No supporting evidence was found for: {', '.join(missing)}."
+        parts_missing.append(
+            f"No evidence found for: {', '.join(missing)}."
         )
-    if rejected:
-        parts.append(
-            f"Additionally, {len(rejected)} claim(s) made in the document could "
-            f"not be verified against the document content and were excluded from scoring."
+
+    # WHAT WOULD MAKE IT GREEN section
+    needed_count = max(1, -(-gap // 1.0))  # ceiling division
+    fixable_criteria = [
+        _CRITERION_DISPLAY.get(k, k.replace("_", " ").title())
+        for k, v in criteria.items()
+        if isinstance(v, dict) and v.get("value", 0) < 1.0
+    ]
+    if fixable_criteria:
+        top_fix = fixable_criteria[:3]
+        parts_fix.append(
+            f"To qualify as GREEN, provide verifiable documentation for at least "
+            f"{int(needed_count)} more criterion/criteria, starting with: "
+            f"{', '.join(top_fix)}. "
+            f"Evidence must include specific data (percentages, capacities, "
+            f"certifications) from authoritative sources."
         )
-    score_sentence = (
-        f"The total ESG score ({score:.2f}) is below the required "
-        f"threshold ({threshold:.1f}) for a project of this type."
-    )
-    base = (
-        "This project is classified as NOT GREEN because it lacks sufficient "
-        "environmental impact evidence. "
-    )
-    return base + " ".join(parts) + " " + score_sentence
+
+    sections = []
+    sections.append("VERDICT: NOT GREEN — insufficient evidence score.")
+    if parts_why:
+        sections.append("WHY: " + " ".join(parts_why))
+    if parts_missing:
+        sections.append("WHAT IS MISSING: " + " ".join(parts_missing))
+    if parts_fix:
+        sections.append("WHAT WOULD MAKE IT GREEN: " + " ".join(parts_fix))
+    return "\n".join(sections)
 
 
 def _build_missing_criteria_explanation(
@@ -1560,43 +1963,59 @@ def _build_missing_criteria_explanation(
     stops: dict,
     score: float,
     threshold: float,
+    evidence_quality: dict | None = None,
 ) -> dict:
     """
-    Audit 2.0: returns a structured 'what is missing to become GREEN' breakdown.
+    Audit 2.0: structured 'what is missing to become GREEN' breakdown.
+
+    Upgraded: now includes evidence quality per criterion and specific
+    upgrade actions (e.g. "replace marketing claim with technical data").
 
     Returns:
     {
-      "gap": float,                  — how much score is needed to reach threshold
-      "missing_criteria": [...],     — list of unmet criteria with action guidance
-      "is_fixable": bool,            — can this project reach GREEN by adding evidence?
-      "summary": str,                — one-sentence human verdict
+      "gap": float,
+      "missing_criteria": [{criterion, label, current_score, evidence_quality,
+                             needed, guidance, upgrade_action}],
+      "is_fixable": bool,
+      "summary": str,
     }
     """
+    eq = evidence_quality or {}
+
     _CRITERION_GUIDANCE: dict[str, str] = {
         "renewable_energy": (
             "Provide documentation of installed renewable energy systems "
-            "(solar panels, wind turbines, hydropower). Include technical specifications "
-            "and capacity data."
+            "(solar panels, wind turbines, hydropower). Include technical specifications, "
+            "installed capacity (kW/MW), and commissioning certificate."
         ),
         "energy_efficiency": (
-            "Document energy efficiency improvements of at least 20%. "
-            "Include baseline and projected/achieved energy consumption figures, "
-            "or reference a recognised efficiency standard (e.g. ISO 50001)."
+            "Document energy efficiency improvements of ≥20%. "
+            "Include baseline and measured energy consumption, reduction percentage, "
+            "and reference an accepted standard (e.g. ISO 50001, EDGE certification)."
         ),
         "ghg_reduction": (
-            "Provide quantified greenhouse gas or CO₂ reduction targets or results. "
-            "Include baseline emissions, reduction percentage, and methodology."
+            "Provide quantified GHG / CO₂ reduction commitments with methodology. "
+            "Include baseline emissions (tCO₂e/yr), target reduction (%), and "
+            "monitoring plan. Avoid vague 'reducing carbon footprint' statements."
         ),
         "environmental_infrastructure": (
-            "Document environmental control systems such as wastewater treatment, "
-            "dust-gas filtration, or industrial recycling. Include technical drawings "
-            "or commissioning certificates."
+            "Document environmental control systems: wastewater treatment capacity, "
+            "dust-gas filtration specs, or industrial recycling volumes. "
+            "Include technical drawings or commissioning certificates."
         ),
         "certificate": (
             "Obtain (or document existing) environmental certification: "
-            "LEED, EDGE, BREEAM, ISO 14001, or equivalent state environmental "
-            "approval. Generic quality certificates (ISO 9001) do not qualify."
+            "LEED, EDGE, BREEAM, ISO 14001, or state environmental approval. "
+            "ISO 9001 (quality) and ISO 45001 (safety) do NOT qualify."
         ),
+    }
+
+    _UPGRADE_ACTIONS: dict[str, str] = {
+        "renewable_energy": "Replace generic references with engineering specs: panel count, total kWp, annual generation (kWh).",
+        "energy_efficiency": "Add a certified energy audit showing ≥20% baseline-to-target reduction with measurement methodology.",
+        "ghg_reduction": "Provide an emissions inventory (baseline year + projection) validated by an accredited body.",
+        "environmental_infrastructure": "Attach commissioning certificate for treatment/filtration system with capacity data.",
+        "certificate": "Attach the actual certificate (LEED/EDGE/BREEAM/ISO 14001). Ensure it covers the specific project, not the company.",
     }
 
     stop_triggered = any(
@@ -1626,40 +2045,68 @@ def _build_missing_criteria_explanation(
 
     missing_list = []
     for name, obj in criteria.items():
-        val = obj.get("value", 0.0) if isinstance(obj, dict) else 0.0
+        val     = obj.get("value", 0.0) if isinstance(obj, dict) else 0.0
+        crit_eq = eq.get(name, None)
         if val < 0.5:
-            label    = _CRITERION_DISPLAY.get(name, name.replace("_", " ").title())
+            label   = _CRITERION_DISPLAY.get(name, name.replace("_", " ").title())
             guidance = _CRITERION_GUIDANCE.get(name, "Provide verifiable documentation.")
+            upgrade  = _UPGRADE_ACTIONS.get(name, "Provide authoritative documentary evidence.")
+            entry = {
+                "criterion":      name,
+                "label":          label,
+                "current_score":  round(val, 2),
+                "needed":         round(1.0 - val, 2),
+                "guidance":       guidance,
+                "upgrade_action": upgrade,
+            }
+            if crit_eq is not None:
+                entry["evidence_quality"] = crit_eq
+            missing_list.append(entry)
+        elif crit_eq is not None and crit_eq < 0.5:
+            # In criteria but low quality — flag for upgrade
+            label   = _CRITERION_DISPLAY.get(name, name.replace("_", " ").title())
+            upgrade = _UPGRADE_ACTIONS.get(name, "Strengthen evidence quality.")
             missing_list.append({
-                "criterion": name,
-                "label":     label,
-                "current_score": round(val, 2),
-                "needed": round(1.0 - val, 2),
-                "guidance": guidance,
+                "criterion":      name,
+                "label":          label,
+                "current_score":  round(val, 2),
+                "needed":         0.0,  # already confirmed, quality upgrade needed
+                "guidance":       f"{label} is confirmed but evidence quality is low ({crit_eq:.2f}). "
+                                  f"Strengthen with authoritative sources.",
+                "upgrade_action": upgrade,
+                "evidence_quality": crit_eq,
+                "quality_upgrade_only": True,
             })
 
-    # Sort by highest potential contribution first
-    missing_list.sort(key=lambda x: -x["needed"])
+    # Sort: unconfirmed first (by gap), then quality upgrades
+    missing_list.sort(key=lambda x: (-x["needed"], x.get("evidence_quality", 1.0)))
 
     is_fixable = (confirmed_score + missing_potential) >= threshold
 
     if gap == 0.0:
         summary = "This project meets the required threshold. No additional criteria needed."
     elif is_fixable:
-        n_needed = sum(
-            1 for m in missing_list
-            if confirmed_score + m["needed"] + (threshold - score) <= 1.0 + 1e-9
+        names_needed = ", ".join(
+            m["label"] for m in missing_list
+            if not m.get("quality_upgrade_only") and m["needed"] > 0
+        )[:3 * 30]  # rough char limit
+        names_needed = ", ".join(
+            m["label"] for m in missing_list
+            if not m.get("quality_upgrade_only")
+        )[:3]
+        names_str = ", ".join(
+            m["label"] for m in missing_list
+            if not m.get("quality_upgrade_only")
         )
-        criteria_needed = missing_list[:max(1, len(missing_list))]
-        names_needed = ", ".join(m["label"] for m in criteria_needed[:3])
         summary = (
-            f"This project is {gap:.2f} points below the required threshold ({threshold:.1f}). "
-            f"To qualify as GREEN, the following must be documented: {names_needed}."
+            f"Gap: {gap:.2f} points below threshold ({threshold:.1f}). "
+            f"To qualify as GREEN, document: {names_str or 'additional ESG criteria'}. "
+            f"Evidence must be from authoritative sources (technical docs, certificates)."
         )
     else:
         summary = (
-            f"This project is {gap:.2f} points below the required threshold ({threshold:.1f}). "
-            "The available evidence is insufficient to reach GREEN classification "
+            f"Gap: {gap:.2f} points below threshold ({threshold:.1f}). "
+            "Available evidence is structurally insufficient for GREEN classification "
             "without fundamentally changing the project scope."
         )
 
@@ -1771,40 +2218,77 @@ def _build_confidence_explanation(
     return base
 
 
-def _compute_confidence(validated_flags: dict, rejected: list) -> int:
+def _compute_confidence(
+    validated_flags: dict,
+    rejected: list,
+    evidence_quality: dict | None = None,
+    greenwashing_risk: float = 0.0,
+) -> int:
     """
-    Evidence-based confidence (0–100).
+    Confidence Model v2 — weighted formula replacing heuristic.
 
-    Considers: signal strength, contradiction level, data completeness,
-    ambiguity level, and number of rejected LLM claims — NOT just score.
+    confidence = base_signal_strength
+               - ambiguity_penalty
+               - contradiction_penalty
+               + evidence_quality_bonus
+               - greenwashing_penalty
+
     Clamped to [10, 95].
+
+    Parameters
+    ----------
+    validated_flags    : {green_criteria, stop_factors}
+    rejected           : list of rejected LLM claim names
+    evidence_quality   : per-criterion quality scores (0–1), from breakdown
+    greenwashing_risk  : greenwashing_risk_score (0–1)
     """
+    eq = evidence_quality or {}
     crits = validated_flags.get("green_criteria", {})
     stops = validated_flags.get("stop_factors",  {})
 
+    # Base signal strength: weighted by tier
     strong_count    = sum(
         1 for v in crits.values() if isinstance(v, dict) and v.get("value", 0) >= 1.0
     )
     confirmed_count = sum(
-        1 for v in crits.values() if isinstance(v, dict) and v.get("value", 0) >= 0.5
+        1 for v in crits.values() if isinstance(v, dict) and 0.5 <= v.get("value", 0) < 1.0
+    )
+    weak_count      = sum(
+        1 for v in crits.values() if isinstance(v, dict) and 0.0 < v.get("value", 0) < 0.5
     )
     any_stop  = any(v.get("value", 0) >= 0.5 for v in stops.values() if isinstance(v, dict))
     soft_stop = any(
         0.3 <= v.get("value", 0) < 0.5 for v in stops.values() if isinstance(v, dict)
     )
 
-    amb         = _compute_ambiguity_level(crits, stops, rejected)
-    amb_penalty = {"low": 0, "medium": 8, "high": 18}[amb]
+    # Evidence quality bonus: average quality of confirmed criteria
+    confirmed_eq_values = [
+        eq.get(name, 0.6)
+        for name, v in crits.items()
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    ]
+    eq_avg = (sum(confirmed_eq_values) / len(confirmed_eq_values)
+              if confirmed_eq_values else 0.0)
+    eq_bonus = round(eq_avg * 15)   # up to +15 for perfect evidence quality
 
-    confidence  = 35
-    confidence += 15 * strong_count
-    confidence +=  8 * confirmed_count
+    amb         = _compute_ambiguity_level(crits, stops, rejected)
+    amb_penalty = {"low": 0, "medium": 10, "high": 22}[amb]
+
+    # Greenwashing risk penalty
+    gw_penalty = round(greenwashing_risk * 25)
+
+    confidence  = 30                        # baseline
+    confidence += 18 * strong_count         # strong confirmed evidence
+    confidence +=  9 * confirmed_count      # partial confirmed
+    confidence +=  3 * weak_count           # weak signals (low weight)
+    confidence += eq_bonus                  # quality of evidence
     if any_stop:
-        confidence += 12
+        confidence += 15                    # stop-factor confidence is high
     if soft_stop:
-        confidence -= 5
-    confidence -= 12 * len(rejected)
+        confidence -= 7
+    confidence -= 14 * len(rejected)        # each rejected LLM claim hurts
     confidence -= amb_penalty
+    confidence -= gw_penalty
 
     return max(10, min(95, confidence))
 
@@ -1953,48 +2437,99 @@ def analyze_esg_holistic(text: str) -> dict:
                 notes    = result.get("notes", [])
                 vf       = result["validated_flags"]
 
-                # Python computes confidence + reasoning (never from LLM)
-                result["confidence"] = _compute_confidence(vf, rejected)
-                result["reason"]     = _build_safe_reasoning(vf, rejected, notes)
-
-                # Calibrated scoring + risk profiling (new fields)
+                # Calibrated scoring — produces evidence_quality + time_statuses
                 vfc = vf["green_criteria"]
                 vfs = vf["stop_factors"]
                 calibrated, breakdown = _compute_calibrated_score(vfc, vfs, text, notes)
-                amb        = _compute_ambiguity_level(vfc, vfs, rejected)
-                conf       = _compute_confidence(vf, rejected)
-                thresh     = _compute_dynamic_threshold(vfc, vfs)
-                risk_facts = _compute_risk_factors(vfc, vfs, rejected)
 
-                # Use adjusted criteria from breakdown if cross-rules modified them
+                # Extract evidence quality and time statuses from breakdown
+                eq_scores    = breakdown.get("evidence_quality", {})
+                time_statuses = breakdown.get("time_statuses", {})
+
+                # Use adjusted criteria from breakdown (cross-rules may have modified)
                 adj_crit = breakdown.get("adjusted_criteria", vfc)
 
-                result["calibrated_score"]  = calibrated
-                result["penalty_breakdown"] = breakdown
-                result["threshold"]         = thresh
-                result["ambiguity_level"]   = amb
-                result["risk_factors"]      = risk_facts
-                result["semantic_signals"]  = {
+                # Greenwashing risk detection (adversarial intent layer)
+                t_lower_full = " ".join(text.lower().split())
+                gw_report    = _compute_greenwashing_risk(adj_crit, vfs, t_lower_full, rejected)
+
+                # Confidence v2 — weighted formula
+                amb        = _compute_ambiguity_level(adj_crit, vfs, rejected)
+                conf       = _compute_confidence(
+                    vf, rejected,
+                    evidence_quality=eq_scores,
+                    greenwashing_risk=gw_report["greenwashing_risk_score"],
+                )
+                thresh     = _compute_dynamic_threshold(adj_crit, vfs)
+                risk_facts = _compute_risk_factors(adj_crit, vfs, rejected)
+
+                # Python reasoning (never from LLM)
+                result["confidence"] = conf
+                result["reason"]     = _build_safe_reasoning(
+                    {"green_criteria": adj_crit, "stop_factors": vfs}, rejected, notes
+                )
+
+                result["calibrated_score"]      = calibrated
+                result["penalty_breakdown"]     = breakdown
+                result["threshold"]             = thresh
+                result["ambiguity_level"]       = amb
+                result["risk_factors"]          = risk_facts
+                result["evidence_quality"]      = eq_scores
+                result["semantic_signals"]      = {
                     k: v.get("value", 0.0)
                     for k, v in adj_crit.items() if isinstance(v, dict)
                 }
-                # Explainability fields (decision-independent — built here)
+                # Greenwashing / adversarial detection
+                result.update(gw_report)
+
+                # Explainability fields
                 result["criterion_breakdown"]     = _build_score_breakdown(adj_crit)
                 result["ambiguity_explanation"]   = _build_ambiguity_explanation(amb, rejected)
                 result["confidence_explanation"]  = _build_confidence_explanation(conf, amb, rejected)
                 result["risk_explanation"]        = _build_risk_explanation(risk_facts)
                 result["missing_criteria"]        = _build_missing_criteria_explanation(
-                    adj_crit, vfs, calibrated, thresh
+                    adj_crit, vfs, calibrated, thresh, evidence_quality=eq_scores
                 )
+
+                # Decision explanation v2 (WHY / WHAT / HOW TO FIX)
+                # Note: decision is not yet known here; set after threshold comparison
+                # We store the data so run_tests.py can build the final explanation.
+                result["_adj_crit_for_explanation"] = adj_crit
+                result["_gw_report_for_explanation"] = gw_report
+
+                # Debug visibility block
+                result["debug"] = {
+                    "semantic_scores":    {
+                        k: (v.get("value", 0.0) if isinstance(v, dict) else 0.0)
+                        for k, v in vfc.items()
+                    },
+                    "calibrated_score":   calibrated,
+                    "raw_score":          breakdown.get("raw", 0.0),
+                    "penalties": {
+                        "ambiguity":     breakdown.get("ambiguity_penalty", 0.0),
+                        "contradiction": breakdown.get("contradiction_penalty", 0.0),
+                        "consistency":   breakdown.get("consistency_penalty", 0.0),
+                        "total":         breakdown.get("total_penalty", 0.0),
+                    },
+                    "evidence_quality":   eq_scores,
+                    "time_status":        time_statuses,
+                    "greenwashing_risk":  gw_report,
+                    "threshold":         thresh,
+                    "ambiguity_level":   amb,
+                    "rejected_flags":    rejected,
+                    "audit_notes":       notes,
+                }
 
                 n_conf = sum(
                     1 for v in vf["green_criteria"].values()
                     if isinstance(v, dict) and v.get("value", 0) >= 0.5
                 )
+                gw_level = gw_report.get("greenwashing_risk_level", "low")
                 print(
                     f"[extractor] LLM extraction (attempt {attempt}): "
                     f"green_criteria_true={n_conf}/5, "
-                    f"confidence={result['confidence']}"
+                    f"confidence={conf}, "
+                    f"greenwashing_risk={gw_level}"
                     + (f", overridden={rejected}" if rejected else "")
                 )
                 return result
