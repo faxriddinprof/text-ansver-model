@@ -1,0 +1,26 @@
+PETRONEXT MChJ — Facility Modernization Application
+
+Company Profile:
+PetroNext MChJ operates petroleum product distribution terminals.
+Primary business activity: neft mahsulotlari saqlash va taqsimlash
+(petroleum products storage and distribution).
+
+Core Operations:
+- Petroleum storage tanks: 1,200 tonne total capacity
+- Products handled: mazut, dizel yoqilg'i, benzin (fuel oil, diesel, gasoline)
+- Neft mahsulotlari distribution: 4 regional routes, 180 deliveries/month
+- Petroleum product handling staff: 87 personnel
+
+Modernization Component — Rooftop Solar Installation:
+24 solar photovoltaic panels installed on the warehouse administrative
+building roof. Solar panel output: 18 kWh per day.
+Purpose: reduce internal electricity costs for office lighting only.
+Solar energy covers approximately 3% of total facility energy needs.
+Remaining 97% of energy consumed from standard national grid supply.
+
+Financial Parameters:
+Total modernization cost: 185 million UZS
+Solar installation cost: 48 million UZS (26% of project scope)
+
+No environmental certificate is applied for or planned.
+Primary investment driver: operational cost reduction, not ESG compliance.

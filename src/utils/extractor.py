@@ -856,34 +856,162 @@ def _build_safe_reasoning(validated_flags: dict, rejected: list, notes: list) ->
     return " ".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Calibrated Scoring Engine
+# ---------------------------------------------------------------------------
+
+def _compute_dynamic_threshold(criteria: dict, stops: dict) -> float:
+    """
+    Project-type-aware GREEN decision threshold [2.7 – 3.3].
+
+    certified renewable  → 2.7   (clean credentials, lower bar)
+    oil/coal adjacent    → 3.3   (higher scrutiny required)
+    pure industrial      → 3.2   (no clean-energy evidence at all)
+    standard             → 3.0
+    """
+    r  = criteria.get("renewable_energy", {})
+    c  = criteria.get("certificate", {})
+    oi = stops.get("oil_gas", {})
+    co = stops.get("coal", {})
+
+    r_val  = r.get("value",  0.0) if isinstance(r,  dict) else 0.0
+    c_val  = c.get("value",  0.0) if isinstance(c,  dict) else 0.0
+    oi_val = oi.get("value", 0.0) if isinstance(oi, dict) else 0.0
+    co_val = co.get("value", 0.0) if isinstance(co, dict) else 0.0
+
+    if r_val >= 1.0 and c_val >= 0.6:
+        return 2.7   # certified renewable project — easier bar
+    if 0.3 <= oi_val < 0.5 or 0.3 <= co_val < 0.5:
+        return 3.3   # oil/coal adjacency — higher scrutiny
+    if r_val == 0.0 and c_val == 0.0:
+        return 3.2   # pure industrial, no clean-energy evidence
+    return 3.0       # standard
+
+
+def _compute_calibrated_score(criteria: dict, stops: dict) -> tuple:
+    """
+    Calibrated scoring with penalties for weak-only evidence and soft contradictions.
+
+    ambiguity_penalty    — when ALL signals are weak (< 0.5), each adds 0.2 penalty
+    contradiction_penalty — soft stop signals (0.3–0.49) indicate unresolved industry risk
+
+    Score clamped to [0, 5]. Returns (final_score: float, breakdown: dict).
+    """
+    raw = sum(v.get("value", 0.0) for v in criteria.values() if isinstance(v, dict))
+
+    confirmed = sum(
+        1 for v in criteria.values()
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    )
+    weak = sum(
+        1 for v in criteria.values()
+        if isinstance(v, dict) and 0.0 < v.get("value", 0) < 0.5
+    )
+
+    # Ambiguity penalty: only weak signals present, no confirmed evidence
+    ambiguity_penalty = 0.2 * weak if confirmed == 0 else 0.0
+
+    # Contradiction penalty: soft stop signals present (concerning but not blocking)
+    soft_stop_sum = sum(
+        v.get("value", 0.0) for v in stops.values()
+        if isinstance(v, dict) and 0.3 <= v.get("value", 0) < 0.5
+    )
+    contradiction_penalty = 0.3 if soft_stop_sum > 0 else 0.0
+
+    final = max(0.0, min(5.0, raw - ambiguity_penalty - contradiction_penalty))
+    return final, {
+        "raw":                   round(raw, 3),
+        "ambiguity_penalty":     round(ambiguity_penalty, 3),
+        "contradiction_penalty": round(contradiction_penalty, 3),
+        "final":                 round(final, 3),
+    }
+
+
+def _compute_ambiguity_level(criteria: dict, stops: dict, rejected: list) -> str:
+    """
+    Returns 'low' | 'medium' | 'high' based on evidence quality.
+
+    high   — many rejected claims, soft stops present, or only weak criteria signals
+    medium — one rejected claim or one weak criterion
+    low    — confirmed evidence, no rejections, no soft stops
+    """
+    confirmed  = sum(
+        1 for v in criteria.values()
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    )
+    weak       = sum(
+        1 for v in criteria.values()
+        if isinstance(v, dict) and 0.0 < v.get("value", 0) < 0.5
+    )
+    soft_stops = sum(
+        1 for v in stops.values()
+        if isinstance(v, dict) and 0.3 <= v.get("value", 0) < 0.5
+    )
+    n_rejected = len(rejected)
+
+    if n_rejected >= 2 or soft_stops >= 1 or (confirmed == 0 and weak >= 2):
+        return "high"
+    if n_rejected == 1 or weak == 1:
+        return "medium"
+    return "low"
+
+
+def _compute_risk_factors(criteria: dict, stops: dict, rejected: list) -> list:
+    """Build an ordered list of human-readable risk signals for audit trail."""
+    factors = []
+
+    for k, v in stops.items():
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5:
+            factors.append(f"STOP:{k}(score={v['value']:.1f})")
+        elif isinstance(v, dict) and v.get("value", 0) >= 0.3:
+            factors.append(f"SOFT_RISK:{k}(score={v['value']:.1f})")
+
+    for r in rejected:
+        factors.append(f"REJECTED:{r}")
+
+    for k, v in criteria.items():
+        if isinstance(v, dict) and 0.0 < v.get("value", 0) < 0.5:
+            factors.append(f"WEAK_EVIDENCE:{k}(score={v['value']:.1f})")
+
+    return factors
+
+
 def _compute_confidence(validated_flags: dict, rejected: list) -> int:
     """
-    Calibrated confidence score (0–100).
+    Evidence-based confidence (0–100).
 
-    Formula:
-        40
-        + 20 × average_evidence_strength  (green criteria scores, 0.0–1.0)
-        + 10 × strong_evidence_count       (criteria with value == 1.0)
-        + 10  if any stop factor triggered  (very certain NOT GREEN)
-        - 15 × rejected_count              (each overridden LLM claim = uncertainty)
-    Clamped to [0, 100].
+    Considers: signal strength, contradiction level, data completeness,
+    ambiguity level, and number of rejected LLM claims — NOT just score.
+    Clamped to [10, 95].
     """
-    crits    = validated_flags.get("green_criteria", {})
-    stops    = validated_flags.get("stop_factors", {})
+    crits = validated_flags.get("green_criteria", {})
+    stops = validated_flags.get("stop_factors",  {})
 
-    values       = [v.get("value", 0.0) for v in crits.values() if isinstance(v, dict)]
-    avg_strength = sum(values) / max(len(values), 1)
-    strong_count = sum(1 for s in values if s >= 1.0)
-    any_stop     = any(v.get("value", 0) >= 0.5 for v in stops.values() if isinstance(v, dict))
+    strong_count    = sum(
+        1 for v in crits.values() if isinstance(v, dict) and v.get("value", 0) >= 1.0
+    )
+    confirmed_count = sum(
+        1 for v in crits.values() if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    )
+    any_stop  = any(v.get("value", 0) >= 0.5 for v in stops.values() if isinstance(v, dict))
+    soft_stop = any(
+        0.3 <= v.get("value", 0) < 0.5 for v in stops.values() if isinstance(v, dict)
+    )
 
-    confidence  = 40
-    confidence += int(20 * avg_strength)
-    confidence += 10 * strong_count
+    amb         = _compute_ambiguity_level(crits, stops, rejected)
+    amb_penalty = {"low": 0, "medium": 8, "high": 18}[amb]
+
+    confidence  = 35
+    confidence += 15 * strong_count
+    confidence +=  8 * confirmed_count
     if any_stop:
-        confidence += 10
-    confidence -= 15 * len(rejected)
+        confidence += 12
+    if soft_stop:
+        confidence -= 5
+    confidence -= 12 * len(rejected)
+    confidence -= amb_penalty
 
-    return max(0, min(100, confidence))
+    return max(10, min(95, confidence))
 
 
 def _validate_esg_response(raw_esg: dict, text: str) -> dict:
@@ -1033,6 +1161,21 @@ def analyze_esg_holistic(text: str) -> dict:
                 # Python computes confidence + reasoning (never from LLM)
                 result["confidence"] = _compute_confidence(vf, rejected)
                 result["reason"]     = _build_safe_reasoning(vf, rejected, notes)
+
+                # Calibrated scoring + risk profiling (new fields)
+                vfc = vf["green_criteria"]
+                vfs = vf["stop_factors"]
+                calibrated, breakdown = _compute_calibrated_score(vfc, vfs)
+                amb = _compute_ambiguity_level(vfc, vfs, rejected)
+                result["calibrated_score"] = calibrated
+                result["score_breakdown"]  = breakdown
+                result["threshold"]        = _compute_dynamic_threshold(vfc, vfs)
+                result["ambiguity_level"]  = amb
+                result["risk_factors"]     = _compute_risk_factors(vfc, vfs, rejected)
+                result["semantic_signals"] = {
+                    k: v.get("value", 0.0)
+                    for k, v in vfc.items() if isinstance(v, dict)
+                }
 
                 n_conf = sum(
                     1 for v in vf["green_criteria"].values()

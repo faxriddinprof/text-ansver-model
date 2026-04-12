@@ -52,6 +52,10 @@ from src.utils.extractor import (
     _semantic_strength,
     _GREEN_SEMANTIC_CONCEPTS,
     _STOP_FACTOR_SEMANTIC,
+    _compute_calibrated_score,
+    _compute_dynamic_threshold,
+    _compute_ambiguity_level,
+    _compute_risk_factors,
 )
 from src.utils.engine import evaluate, evaluate_from_esg_json
 
@@ -107,15 +111,15 @@ def run_txt_pipeline(file_path: str) -> dict:
                 for v in stop_facs.values()
                 if isinstance(v, dict)
             )
-            score = sum(
-                v.get("value", 0.0)
-                for v in criteria.values()
-                if isinstance(v, dict)
-            )
+            # Use calibrated score + dynamic threshold from extractor
+            score     = esg.get("calibrated_score",
+                            sum(v.get("value", 0.0) for v in criteria.values()
+                                if isinstance(v, dict)))
+            threshold = esg.get("threshold", 3.0)
 
             if stop_triggered:
                 final_status = "NOT GREEN"
-            elif score >= 3.0:
+            elif score >= threshold:
                 final_status = "GREEN"
             else:
                 final_status = "NOT GREEN"
@@ -135,6 +139,9 @@ def run_txt_pipeline(file_path: str) -> dict:
             return {
                 "status":           final_status,
                 "score":            score,
+                "threshold":        threshold,
+                "ambiguity_level":  esg.get("ambiguity_level", "medium"),
+                "risk_factors":     esg.get("risk_factors", []),
                 "pipeline":         "txt_esg",
                 "confidence":       esg.get("confidence", 50) / 100,
                 "reason":           esg.get("reason", ""),
@@ -210,18 +217,24 @@ def run_context_json_pipeline(file_path: str) -> dict:
         n: _semantic_strength(n, t, _STOP_FACTOR_SEMANTIC) for n in _STOP_NAMES
     }
 
+    criteria  = {k: {"value": v, "evidence": ""} for k, v in criteria_scores.items()}
+    stop_facs = {k: {"value": v, "evidence": ""} for k, v in stop_scores.items()}
+
+    # Use same calibrated scoring + dynamic threshold as the LLM pipeline
+    calibrated, breakdown = _compute_calibrated_score(criteria, stop_facs)
+    threshold             = _compute_dynamic_threshold(criteria, stop_facs)
+    amb                   = _compute_ambiguity_level(criteria, stop_facs, [])
+    risk_factors          = _compute_risk_factors(criteria, stop_facs, [])
+
     stop_triggered = any(v >= 0.5 for v in stop_scores.values())
-    score          = sum(criteria_scores.values())
+    score          = calibrated
 
     if stop_triggered:
         final_status = "NOT GREEN"
-    elif score >= 3.0:
+    elif score >= threshold:
         final_status = "GREEN"
     else:
         final_status = "NOT GREEN"
-
-    criteria  = {k: {"value": v, "evidence": ""} for k, v in criteria_scores.items()}
-    stop_facs = {k: {"value": v, "evidence": ""} for k, v in stop_scores.items()}
 
     passed = [f"{k}({v:.1f})" for k, v in criteria_scores.items() if v >= 0.5]
     failed = [f"{k}({v:.1f})" for k, v in criteria_scores.items() if v < 0.5]
@@ -229,14 +242,17 @@ def run_context_json_pipeline(file_path: str) -> dict:
 
     reason = (
         f"Semantic criteria: {', '.join(passed) or 'none'}. "
-        f"Total score: {score:.2f}. "
+        f"Calibrated score: {calibrated:.2f} (threshold: {threshold:.1f}). "
         + ("Stop factor triggered." if stop_triggered
-           else f"Score {'≥' if score >= 3.0 else '<'} 3.0 → {final_status}.")
+           else f"Score {'≥' if score >= threshold else '<'} {threshold:.1f} → {final_status}.")
     )
 
     return {
         "status":           final_status,
         "score":            score,
+        "threshold":        threshold,
+        "ambiguity_level":  amb,
+        "risk_factors":     risk_factors,
         "pipeline":         "context_json_semantic",
         "confidence":       min(1.0, 0.5 + 0.1 * strong),
         "reason":           reason,
@@ -318,11 +334,14 @@ for entry in expected_list:
     if QUIET:
         sys.stdout = sys.__stdout__
 
-    actual     = result["status"]
-    score      = result.get("score", 0)
-    confidence = result.get("confidence")
-    pipeline   = result.get("pipeline", "txt")
-    reason     = result.get("reason", "")
+    actual           = result["status"]
+    score            = result.get("score", 0)
+    threshold        = result.get("threshold", 3.0)
+    ambiguity        = result.get("ambiguity_level", "")
+    risk_factors     = result.get("risk_factors", [])
+    confidence       = result.get("confidence")
+    pipeline         = result.get("pipeline", "txt")
+    reason           = result.get("reason", "")
     rejected_flags   = result.get("rejected_flags", [])
     validation_notes = result.get("validation_notes", [])
 
@@ -347,8 +366,11 @@ for entry in expected_list:
             "expected": expected,
             "actual": actual,
             "score": score,
+            "threshold": threshold,
+            "ambiguity_level": ambiguity,
             "confidence": confidence,
             "reason": reason,
+            "risk_factors": risk_factors,
             "passed_rules": passed_rules,
             "failed_rules": failed_rules,
             "exclusions_triggered": exclusions,
@@ -356,11 +378,14 @@ for entry in expected_list:
         })
 
     conf_str = f"  confidence: {confidence:.0%}" if confidence is not None else ""
+    amb_str  = f"  ambiguity: {ambiguity}" if ambiguity else ""
     print(f"  Pipeline : [{pipeline}]")
     print(f"  Expected : {expected}")
-    print(f"  Actual   : {actual}  (score: {score}{conf_str})")
+    print(f"  Actual   : {actual}  (score: {score:.2f}  threshold: {threshold:.1f}{conf_str}{amb_str})")
     if reason:
         print(f"  Reason   : {reason}")
+    if risk_factors:
+        print(f"  Risk     : {' | '.join(risk_factors[:4])}")
     if rejected_flags:
         for rf in rejected_flags:
             print(f"  Corrected: {rf}")

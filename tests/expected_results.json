@@ -43,5 +43,20 @@
     "file": "tests/fixtures/real/context.json",
     "expected": "GREEN",
     "note": "Real expert-approved green project: FAZO GROUP trikotaj — Davlat Ekologik Ekspertiza certificate + tashkil qilingan manba (organized emission sources) + quyosh energiya (105 solar panels)"
+  },
+  {
+    "file": "tests/fixtures/adversarial_greenwash.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: generic eco-marketing + ISO 9001 (not ESG cert) — no real ESG signals should score"
+  },
+  {
+    "file": "tests/fixtures/adversarial_industrial_efficiency.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: 14% energy reduction only, no renewables, no ESG certificate — insufficient for GREEN"
+  },
+  {
+    "file": "tests/fixtures/adversarial_solar_oil_mix.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: token solar on petroleum distribution terminal — oil stop factor must override solar claim"
   }
 ]
