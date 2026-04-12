@@ -117,11 +117,13 @@ def run_txt_pipeline(file_path: str) -> dict:
             ]
 
             return {
-                "status":     final_status,
-                "score":      score,
-                "pipeline":   "txt_esg",
-                "confidence": esg.get("confidence", 0) / 100,
-                "reason":     esg.get("reasoning", ""),
+                "status":          final_status,
+                "score":           score,
+                "pipeline":        "txt_esg",
+                "confidence":      esg.get("confidence", 50) / 100,
+                "reason":          esg.get("reasoning", ""),
+                "rejected_flags":  esg.get("rejected_flags", []),
+                "validation_notes": esg.get("validation_notes", []),
                 "decision_reasons": {
                     "project_summary":           esg.get("project_summary", {}),
                     "stop_factors":              stop,
@@ -213,6 +215,8 @@ for entry in expected_list:
     confidence = result.get("confidence")
     pipeline   = result.get("pipeline", "txt")
     reason     = result.get("reason", "")
+    rejected_flags   = result.get("rejected_flags", [])
+    validation_notes = result.get("validation_notes", [])
 
     # TXT pipeline extras
     reasons          = result.get("decision_reasons", {})
@@ -249,6 +253,12 @@ for entry in expected_list:
     print(f"  Actual   : {actual}  (score: {score}{conf_str})")
     if reason:
         print(f"  Reason   : {reason}")
+    if rejected_flags:
+        for rf in rejected_flags:
+            print(f"  Corrected: {rf}")
+    if validation_notes:
+        for vn in validation_notes:
+            print(f"  [audit]  : {vn}")
     print(f"  Result   : {icon}")
     if note:
         print(f"  Note     : {note}")

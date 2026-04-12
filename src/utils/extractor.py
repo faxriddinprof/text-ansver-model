@@ -510,6 +510,199 @@ def _parse_esg_response(raw: str) -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# ESG Validation Layer — trust-but-verify (runs after LLM parsing)
+# ---------------------------------------------------------------------------
+
+# Keywords that MUST appear in text for a stop-factor claim to be accepted.
+# Conservative: short, unambiguous tokens only.
+_STOP_FACTOR_KEYWORDS = {
+    "coal":     ["ko'mir", "ko\u02BBmir", "\u0443\u0433\u043e\u043b\u044c", "coal", "koks"],
+    "oil_gas":  ["neft qazib", "neft-gaz", "oil extraction", "gas extraction"],
+    "alcohol":  ["alkogol", "spirt", "\u0441\u043f\u0438\u0440\u0442",
+                 "\u0430\u043b\u043a\u043e\u0433\u043e\u043b\u044c",
+                 "\u043f\u0438\u0432\u043e\u0432\u0430\u0440", "brewery", "distill",
+                 "wine produc", "beer produc"],
+    "tobacco":  ["tamaki", "\u0442\u0430\u0431\u0430\u043a", "tobacco"],
+    "gambling": ["qimor", "\u043a\u0430\u0437\u0438\u043d\u043e", "gambling", "casino"],
+    "weapons":  ["qurol-yarog", "qurol ishlab", "\u043e\u0440\u0443\u0436\u0438\u0435", "weapon"],
+}
+
+# Keywords confirming each green criterion.
+# Designed to avoid keyword fallback FP while not rejecting valid LLM findings.
+_GREEN_CRITERION_KEYWORDS = {
+    "renewable_energy": [
+        "quyosh", "shamol", "solar", "wind", "gidro", "geotherm",
+        "qayta tiklanuvchi", "\u0432\u043e\u0437\u043e\u0431\u043d\u043e\u0432\u043b\u044f\u0435\u043c", "renewable",
+    ],
+    "energy_efficiency": [
+        "samaradorli", "tejamkorlik", "tejam", "efficiency",
+        "\u044d\u043d\u0435\u0440\u0433\u043e\u044d\u0444\u0444\u0435\u043a\u0442\u0438\u0432\u043d",
+        "energosberezhen",
+    ],
+    "ghg_reduction": [
+        "co2", "issiqxona", "\u043f\u0430\u0440\u043d\u0438\u043a\u043e\u0432",
+        "ghg", "greenhouse", "emissiya",
+        "\u0432\u044b\u0431\u0440\u043e\u0441",
+    ],
+    "environmental_infrastructure": [
+        "qayta ishlash", "suv t", "suv resur", "chiqindi suv",
+        "chang-gaz filtr", "chang gaz filtr",
+        "water treat", "recycl", "pollution control",
+    ],
+    "certificate": [
+        "leed", "edge", "breeam", "sertifikat",
+        "\u0441\u0435\u0440\u0442\u0438\u0444\u0438\u043a\u0430\u0442", "certificate",
+    ],
+}
+
+
+def _build_safe_reasoning(esg: dict, inconsistencies=None) -> str:
+    """Build a factual reasoning string from validated criteria."""
+    criteria = esg.get("green_criteria", {})
+    stop     = esg.get("stop_factors", {})
+    summary  = esg.get("project_summary", {})
+    lines    = []
+
+    if summary.get("industry"):
+        lines.append(f"Industry: {summary['industry']}.")
+
+    if stop.get("triggered"):
+        lines.append(f"Stop factors confirmed: {stop.get('details', [])}.")
+        lines.append("Decision: NOT GREEN.")
+    else:
+        confirmed = [
+            k for k, v in criteria.items()
+            if isinstance(v, dict) and v.get("value") is True
+        ]
+        lines.append(
+            f"Confirmed green criteria: {', '.join(confirmed)}."
+            if confirmed else "No green criteria confirmed."
+        )
+        n = len(confirmed)
+        lines.append(
+            f"{n} criteria met (\u22653 required) \u2192 GREEN."
+            if n >= 3 else
+            f"Only {n} criteria met (<3 required) \u2192 NOT GREEN."
+        )
+
+    if inconsistencies:
+        lines.append(
+            f"[LLM reasoning was corrected: {'; '.join(inconsistencies)}]"
+        )
+
+    return " ".join(lines)
+
+
+def _validate_esg_response(esg: dict, text: str) -> dict:
+    """
+    Trust-but-verify layer:  validate every LLM-claimed flag against the raw text.
+
+    Actions:
+    1. Stop-factor claims are verified by keyword presence → override if unsupported.
+    2. Green-criteria TRUE claims are verified by domain keywords → override if absent.
+    3. Reasoning text is checked for words that contradict the text → regenerated.
+    4. Confidence replaced with a rule-based 0-100 score.
+
+    Returns a deep copy of `esg` enriched with:
+      llm_raw_flags     — original LLM outputs before any override
+      rejected_flags    — list of overridden claims
+      validation_notes  — human-readable explanation of each correction
+      confidence        — rule-based score
+    """
+    import copy as _copy
+    esg = _copy.deepcopy(esg)
+    t   = text.lower()
+
+    rejected_flags   = []
+    validation_notes = []
+
+    # ── Snapshot raw LLM flags ────────────────────────────────────────────
+    raw_stop = esg.get("stop_factors", {}).get("triggered", False)
+    raw_crit = {
+        k: (v.get("value") if isinstance(v, dict) else v)
+        for k, v in esg.get("green_criteria", {}).items()
+    }
+    esg["llm_raw_flags"] = {"stop_triggered": raw_stop, "criteria": raw_crit}
+
+    # ── Validate stop factors ─────────────────────────────────────────────
+    stop = esg.setdefault("stop_factors", {})
+    if stop.get("triggered", False):
+        llm_details    = list(stop.get("details", []))
+        confirmed_cats = [
+            cat for cat, kws in _STOP_FACTOR_KEYWORDS.items()
+            if any(kw in t for kw in kws)
+        ]
+        if not confirmed_cats:
+            stop["triggered"] = False
+            stop["details"]   = []
+            rejected_flags.append(f"stop_factors:{llm_details}")
+            validation_notes.append(
+                f"LLM flagged stop factors {llm_details} but no supporting "
+                f"keywords found in text \u2192 overridden to FALSE"
+            )
+        else:
+            stop["details"] = confirmed_cats
+
+    # ── Validate green criteria ───────────────────────────────────────────
+    criteria = esg.setdefault("green_criteria", {})
+    for crit_name, crit_obj in criteria.items():
+        if not (isinstance(crit_obj, dict) and crit_obj.get("value") is True):
+            continue
+        required_kws = _GREEN_CRITERION_KEYWORDS.get(crit_name, [])
+        if required_kws and not any(kw in t for kw in required_kws):
+            criteria[crit_name]["value"]    = False
+            criteria[crit_name]["evidence"] = (
+                f"[REJECTED: no '{crit_name}' domain keywords found in text]"
+            )
+            rejected_flags.append(crit_name)
+            validation_notes.append(
+                f"LLM claimed {crit_name}=True but no supporting "
+                f"keywords found in text \u2192 overridden to FALSE"
+            )
+
+    # ── Reasoning consistency check ───────────────────────────────────────
+    reason_lower   = esg.get("reasoning", "").lower()
+    inconsistencies = [
+        f"'{cat}' mentioned in reasoning but not in text"
+        for cat, kws in _STOP_FACTOR_KEYWORDS.items()
+        if cat in reason_lower and not any(kw in t for kw in kws)
+    ]
+    if inconsistencies:
+        esg["reasoning"] = _build_safe_reasoning(esg, inconsistencies)
+        validation_notes.append(
+            f"Reasoning inconsistency detected \u2192 regenerated from facts. "
+            f"Issues: {inconsistencies}"
+        )
+
+    # ── Rule-based confidence (replaces meaningless LLM 0-1% value) ──────
+    n_confirmed = sum(
+        1 for v in criteria.values()
+        if isinstance(v, dict) and v.get("value") is True
+    )
+    confidence = 50 + n_confirmed * 10
+
+    # Strong-signal bonus
+    strong = {"renewable_energy", "ghg_reduction", "certificate"}
+    for sc in strong:
+        cv = criteria.get(sc, {})
+        if isinstance(cv, dict) and cv.get("value") is True:
+            confidence += 5
+
+    if stop.get("triggered", False):
+        confidence = max(confidence, 85)   # very clear NOT GREEN
+
+    confidence -= len(rejected_flags) * 10
+    if inconsistencies:
+        confidence -= 15
+
+    esg["confidence"]       = max(0, min(100, confidence))
+    esg["rejected_flags"]   = rejected_flags
+    esg["validation_notes"] = validation_notes
+
+    return esg
+
+
 def analyze_esg_holistic(text: str) -> dict:
     """
     Send the first ESG_ANALYST_MAX_CHARS characters to the LLM for a holistic,
@@ -532,16 +725,20 @@ def analyze_esg_holistic(text: str) -> dict:
             if parsed and criteria and any(
                 isinstance(v, dict) and "value" in v for v in criteria.values()
             ):
-                score = sum(
-                    1 for v in criteria.values()
+                # ── Validation layer ──────────────────────────────────────
+                validated = _validate_esg_response(parsed, text)
+                n_conf    = sum(
+                    1 for v in validated.get("green_criteria", {}).values()
                     if isinstance(v, dict) and v.get("value") is True
                 )
+                rejected  = validated.get("rejected_flags", [])
                 print(
                     f"[extractor] ESG analyst (attempt {attempt}): "
-                    f"decision={parsed.get('final_decision')}, "
-                    f"score={score}/5, confidence={parsed.get('confidence')}"
+                    f"decision={validated.get('final_decision')}, "
+                    f"score={n_conf}/5, confidence={validated.get('confidence')}"
+                    + (f", rejected={rejected}" if rejected else "")
                 )
-                return parsed
+                return validated
 
             print(f"[extractor] Attempt {attempt}: invalid response structure — retrying...")
             prompt += "\n\nREMINDER: Output ONLY the JSON object. No text before or after."
