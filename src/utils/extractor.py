@@ -777,7 +777,7 @@ _STOP_FACTOR_SEMANTIC: dict[str, dict[str, list[list[str]]]] = {
         ],
         "partial": [
             ["qimor", "gambling", "азартн"],
-            ["tikish", "betting", "ставки"],
+            ["betting", "ставки"],
             ["lotereya", "lottery", "лотерея"],
         ],
         "weak": [],
@@ -1303,8 +1303,15 @@ def _semantic_strength(name: str, text_lower: str, concept_map: dict) -> float:
                 pos = text_lower.find(phrase)
                 if pos == -1:
                     continue
+                # Word-boundary guard (left side only): reject if the match
+                # begins in the middle of an alphabetic token.  Right-side check
+                # is intentionally omitted to support Uzbek agglutinative
+                # suffixes (e.g. "quyosh panellari" inside "quyosh panellaridan").
+                if pos > 0 and text_lower[pos - 1].isalpha():
+                    continue
+                end = pos + len(phrase)
                 # Negation guard
-                if _has_negation_nearby(text_lower, pos, pos + len(phrase)):
+                if _has_negation_nearby(text_lower, pos, end):
                     continue
                 return score
     return 0.0
@@ -2414,12 +2421,128 @@ def _validate_esg_response(raw_esg: dict, text: str) -> dict:
     }
 
 
+_CRIT_NAMES = ("renewable_energy", "energy_efficiency", "ghg_reduction",
+               "environmental_infrastructure", "certificate")
+_STOP_NAMES = ("coal", "oil_gas", "alcohol", "tobacco", "gambling")
+
+
+def _semantic_only_analysis(text: str) -> dict:
+    """Semantic-only scoring fallback used when the LLM cannot parse the text.
+
+    Runs ``_semantic_strength`` on the full (normalised) text for each criterion
+    and stop-factor, then passes those scores through the same calibrated scoring
+    and explainability pipeline used by the LLM path.  Returns a result dict
+    with the same keys that ``analyze_esg_holistic`` returns on success.
+    """
+    t = " ".join(text.lower().split())
+
+    criteria_scores = {n: _semantic_strength(n, t, _GREEN_SEMANTIC_CONCEPTS) for n in _CRIT_NAMES}
+    stop_scores     = {n: _semantic_strength(n, t, _STOP_FACTOR_SEMANTIC)    for n in _STOP_NAMES}
+
+    criteria  = {k: {"value": v, "evidence": ""} for k, v in criteria_scores.items()}
+    stop_facs = {k: {"value": v, "evidence": ""} for k, v in stop_scores.items()}
+
+    calibrated, breakdown = _compute_calibrated_score(criteria, stop_facs)
+    threshold             = _compute_dynamic_threshold(criteria, stop_facs)
+    amb                   = _compute_ambiguity_level(criteria, stop_facs, [])
+    risk_factors          = _compute_risk_factors(criteria, stop_facs, [])
+    gw_report             = _compute_greenwashing_risk(criteria, stop_facs, t, [])
+    eq_scores             = breakdown.get("evidence_quality", {})
+
+    stop_triggered = any(v >= 0.5 for v in stop_scores.values())
+    if stop_triggered:
+        final_status = "NOT GREEN"
+    elif calibrated >= threshold:
+        final_status = "GREEN"
+    else:
+        final_status = "NOT GREEN"
+
+    strong   = sum(1 for v in criteria_scores.values() if v >= 1.0)
+    conf_pct = min(95, 40 + 15 * strong)
+
+    passed = [f"{k}({v:.1f})" for k, v in criteria_scores.items() if v >= 0.5]
+    failed = [f"{k}({v:.1f})" for k, v in criteria_scores.items() if v < 0.5]
+
+    explanation = _build_decision_explanation(
+        final_status, calibrated, threshold, criteria, stop_facs, []
+    )
+
+    result = {
+        "status":                  final_status,
+        "calibrated_score":        calibrated,
+        "threshold":               threshold,
+        "ambiguity_level":         amb,
+        "risk_factors":            risk_factors,
+        "pipeline":                "semantic_fallback",
+        "confidence":              min(1.0, conf_pct / 100),
+        "reason": (
+            f"Semantic criteria: {', '.join(passed) or 'none'}. "
+            f"Calibrated score: {calibrated:.2f} (threshold: {threshold:.1f}). "
+            + ("Stop factor triggered." if stop_triggered
+               else f"Score {'≥' if calibrated >= threshold else '<'} {threshold:.1f} → {final_status}.")
+        ),
+        "rejected_flags":          [],
+        "notes":                   [],
+        "validation_notes":        [],
+        "evidence_quality":        eq_scores,
+        "penalty_breakdown":       breakdown,
+        "semantic_signals":        criteria_scores,
+        "score_breakdown":         _build_score_breakdown(criteria),
+        "explanation":             explanation,
+        "risk_explanation":        _build_risk_explanation(risk_factors),
+        "ambiguity_explanation":   _build_ambiguity_explanation(amb, []),
+        "confidence_explanation":  _build_confidence_explanation(conf_pct, amb, []),
+        "missing_criteria":        _build_missing_criteria_explanation(
+            criteria, stop_facs, calibrated, threshold, evidence_quality=eq_scores
+        ),
+        "criterion_breakdown":     _build_score_breakdown(criteria),
+        "decision_reasons": {
+            "stop_factors":              stop_facs,
+            "green_criteria":            criteria,
+            "passed_rules":              passed,
+            "failed_rules":              failed,
+            "exclusions_triggered":      [k for k, v in stop_scores.items() if v >= 0.5],
+            "dependent_rules_triggered": [],
+        },
+        "validated_flags": {
+            "green_criteria": criteria,
+            "stop_factors":   stop_facs,
+        },
+        "_adj_crit_for_explanation": criteria,
+        "_gw_report_for_explanation": gw_report,
+        "debug": {
+            "semantic_scores":   criteria_scores,
+            "calibrated_score":  calibrated,
+            "raw_score":         breakdown.get("raw", 0.0),
+            "penalties":         {
+                "ambiguity":     breakdown.get("ambiguity_penalty", 0.0),
+                "contradiction": breakdown.get("contradiction_penalty", 0.0),
+                "consistency":   breakdown.get("consistency_penalty", 0.0),
+                "total":         breakdown.get("total_penalty", 0.0),
+            },
+            "evidence_quality":  eq_scores,
+            "greenwashing_risk": gw_report,
+            "threshold":         threshold,
+            "ambiguity_level":   amb,
+        },
+    }
+    result.update(gw_report)
+    print(
+        f"[extractor] Semantic fallback: "
+        f"green_criteria={', '.join(passed) or 'none'}, "
+        f"score={calibrated:.2f}, threshold={threshold:.1f}, "
+        f"status={final_status}"
+    )
+    return result
+
+
 def analyze_esg_holistic(text: str) -> dict:
     """
     Call the LLM for structured EXTRACTION ONLY (no decision).
     Then pass the result through the validation layer.
 
     Returns the validated dict from _validate_esg_response, or {} on failure.
+    Falls back to semantic-only scoring if the LLM cannot parse the text.
     """
     body   = text[:ESG_ANALYST_MAX_CHARS]
     prompt = ESG_ANALYST_PROMPT.replace("{{TEXT}}", body)
@@ -2548,5 +2671,5 @@ def analyze_esg_holistic(text: str) -> dict:
         except Exception as e:
             print(f"[extractor] Attempt {attempt} error: {e}")
 
-    print("[extractor] LLM extraction failed after retries — falling back to rule engine")
-    return {}
+    print("[extractor] LLM extraction failed after retries — using semantic-only fallback")
+    return _semantic_only_analysis(text)

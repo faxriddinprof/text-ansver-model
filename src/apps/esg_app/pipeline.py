@@ -21,7 +21,7 @@ def run_esg_pipeline(text: str) -> dict:
 
     normalized = normalize_text(text)
     result = analyze_esg_holistic(normalized)
-    if result is None:
+    if not result:
         raise RuntimeError("ESG engine returned no result.")
     return result
 
