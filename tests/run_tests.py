@@ -8,15 +8,20 @@ Supports two pipelines:
   - .txt files  → extract_data() + evaluate() (FALLBACK)
 
 Usage:
-    python3 run_tests.py                          # all tests, balanced mode
-    python3 run_tests.py --quiet                  # suppress extractor debug
-    python3 run_tests.py --mode strict            # strict negation-aware mode
-    python3 run_tests.py --file checks/simple.txt # single file
+    python3 tests/run_tests.py                          # all tests, balanced mode
+    python3 tests/run_tests.py --quiet                  # suppress extractor debug
+    python3 tests/run_tests.py --mode strict            # strict negation-aware mode
+    python3 tests/run_tests.py --file checks/simple.txt # single file
 """
 
 import json
 import os
 import sys
+
+# Project root (one level up from tests/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -60,9 +65,9 @@ LLM_CHAR_LIMIT = 20_000
 # Paths
 # ---------------------------------------------------------------------------
 
-BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
-RULES_FILE    = os.path.join(BASE_DIR, "src", "utils", "green_rules.json")
-EXPECTED_FILE = os.path.join(BASE_DIR, "checks", "expected_results.json")
+BASE_DIR      = PROJECT_ROOT
+RULES_FILE    = os.path.join(PROJECT_ROOT, "src", "utils", "green_rules.json")
+EXPECTED_FILE = os.path.join(PROJECT_ROOT, "checks", "expected_results.json")
 
 with open(RULES_FILE, encoding="utf-8") as f:
     rules_json = json.load(f)
