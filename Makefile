@@ -7,3 +7,7 @@ test:
 	python3 test.py
 run:
 	python3 manage.py runserver
+
+superuser:
+	python3 manage.py createsuperuser
+	

@@ -1,6 +1,6 @@
 import json
 
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.views.decorators.http import require_http_methods
 
 from .forms import UploadForm
@@ -41,10 +41,29 @@ def analyze(request):
         result_json   = raw_result,
         verdict       = parsed["verdict"],
         score         = parsed["score"],
-        confidence    = parsed["confidence_pct"] / 100,
+        threshold     = parsed["threshold"],
+        confidence    = parsed["confidence_pct"],
     )
 
-    context["result"]  = parsed
+    context["result"]    = parsed
     context["record_id"] = record.pk
     context["raw_json"]  = json.dumps(raw_result, ensure_ascii=False, indent=2)
     return render(request, "esg_app/analyze.html", context)
+
+
+@require_http_methods(["GET"])
+def history(request):
+    records = EsgAnalysis.objects.all()[:100]   # latest 100
+    return render(request, "esg_app/history.html", {"records": records})
+
+
+@require_http_methods(["GET"])
+def detail(request, pk):
+    record = get_object_or_404(EsgAnalysis, pk=pk)
+    parsed   = parse_result(record.result_json)
+    raw_json = json.dumps(record.result_json, ensure_ascii=False, indent=2)
+    return render(request, "esg_app/detail.html", {
+        "record":   record,
+        "result":   parsed,
+        "raw_json": raw_json,
+    })

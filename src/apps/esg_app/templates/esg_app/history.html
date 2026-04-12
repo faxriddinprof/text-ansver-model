@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESG Analysis History</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: #f4f6f9; color: #1a1a2e; min-height: 100vh; }
+
+  header {
+    background: #1a1a2e; color: #fff; padding: 18px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header .logo { font-size: 1.5rem; font-weight: 700; }
+  header .sub  { font-size: .85rem; opacity: .65; }
+  header nav a { color: #a5f3c9; font-weight: 600; text-decoration: none;
+                 font-size: .9rem; margin-left: 12px; }
+
+  main { max-width: 960px; margin: 36px auto; padding: 0 20px 60px; }
+
+  .page-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; }
+  .page-meta  { font-size: .85rem; color: #6b7280; margin-bottom: 24px; }
+
+  .card { background: #fff; border-radius: 10px; padding: 28px 32px;
+          margin-bottom: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.07); }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left; font-size: .72rem; font-weight: 700;
+    letter-spacing: .8px; text-transform: uppercase; color: #6b7280;
+    border-bottom: 2px solid #e5e7eb; padding: 0 12px 12px;
+  }
+  tbody tr { border-bottom: 1px solid #f1f5f9; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #f8fafc; }
+  td { padding: 14px 12px; font-size: .88rem; vertical-align: middle; }
+
+  /* Verdict badge */
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 99px;
+    font-size: .75rem; font-weight: 700; letter-spacing: .3px;
+  }
+  .badge.green { background: #dcfce7; color: #15803d; }
+  .badge.red   { background: #fee2e2; color: #b91c1c; }
+
+  /* Score bar mini */
+  .mini-bar-wrap { width: 80px; background: #e5e7eb; border-radius: 4px; height: 6px; display:inline-block; vertical-align:middle; overflow:hidden; margin-left:8px; }
+  .mini-bar { height: 100%; border-radius: 4px; }
+  .mini-bar.green { background: #16a34a; }
+  .mini-bar.amber { background: #f59e0b; }
+  .mini-bar.red   { background: #ef4444; }
+
+  .link-btn {
+    display: inline-block; padding: 5px 14px; background: #1a1a2e; color: #fff;
+    border-radius: 6px; font-size: .78rem; font-weight: 600; text-decoration: none;
+  }
+  .link-btn:hover { background: #2d2d5e; }
+
+  .empty { text-align: center; padding: 60px 0; color: #6b7280; }
+  .empty a { color: #2563eb; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">🌿 ESG Project Evaluator</div>
+    <div class="sub">Green Finance Classification · Uzbekistan Order #286 · 2025</div>
+  </div>
+  <nav>
+    <a href="{% url 'esg_app:analyze' %}">Analyse</a>
+    <a href="{% url 'esg_app:history' %}">History</a>
+  </nav>
+</header>
+
+<main>
+  <div class="page-title">Analysis History</div>
+  <div class="page-meta">Showing latest {{ records|length }} record{{ records|length|pluralize }}.</div>
+
+  <div class="card">
+    {% if records %}
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>File</th>
+          <th>Verdict</th>
+          <th>Score / Threshold</th>
+          <th>Confidence</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr>
+          <td style="color:#9ca3af">{{ r.pk }}</td>
+          <td>
+            {% if r.uploaded_file %}
+              {{ r.uploaded_file.name|truncatechars:40 }}
+            {% else %}
+              <span style="color:#9ca3af">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.verdict == "GREEN" %}
+              <span class="badge green">✅ GREEN</span>
+            {% else %}
+              <span class="badge red">❌ NOT GREEN</span>
+            {% endif %}
+          </td>
+          <td>
+            <span style="font-weight:700">{{ r.score|floatformat:2 }}</span>
+            <span style="color:#9ca3af"> / {{ r.threshold|floatformat:1 }}</span>
+            {% if r.score >= r.threshold %}
+              <span class="mini-bar-wrap"><span class="mini-bar green" style="width:100%"></span></span>
+            {% elif r.score > 0 %}
+              {% widthratio r.score r.threshold 100 as pct %}
+              <span class="mini-bar-wrap"><span class="mini-bar amber" style="width:{{ pct }}%"></span></span>
+            {% else %}
+              <span class="mini-bar-wrap"><span class="mini-bar red" style="width:2%"></span></span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.confidence >= 70 %}
+              <span style="color:#16a34a;font-weight:700">{{ r.confidence }}%</span>
+            {% elif r.confidence >= 45 %}
+              <span style="color:#d97706;font-weight:700">{{ r.confidence }}%</span>
+            {% else %}
+              <span style="color:#dc2626;font-weight:700">{{ r.confidence }}%</span>
+            {% endif %}
+          </td>
+          <td style="color:#4b5563">{{ r.created_at|date:"d M Y  H:i" }}</td>
+          <td>
+            <a class="link-btn" href="{% url 'esg_app:detail' r.pk %}">View →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+      No analyses yet. <a href="{% url 'esg_app:analyze' %}">Upload a document</a> to get started.
+    </div>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

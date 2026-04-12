@@ -7,13 +7,18 @@ class EsgAnalysis(models.Model):
     result_json   = models.JSONField()
     verdict       = models.CharField(max_length=20)
     score         = models.FloatField()
-    confidence    = models.FloatField()
+    threshold     = models.FloatField(default=3.0)
+    confidence    = models.IntegerField(default=50)   # stored as 0-100 percent
     created_at    = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "ESG Analysis"
         verbose_name_plural = "ESG Analyses"
+
+    @property
+    def is_green(self):
+        return self.verdict == "GREEN"
 
     def __str__(self):
         return f"[{self.verdict}] score={self.score:.2f}  ({self.created_at:%Y-%m-%d %H:%M})"
