@@ -2,18 +2,22 @@ import json
 import sys
 import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+# Project root (one level up from tests/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+os.chdir(PROJECT_ROOT)
 
-from utils.parser import read_txt
-from utils.extractor import extract_data
-from utils.engine import evaluate
+from src.utils.parser import read_txt
+from src.utils.extractor import extract_data
+from src.utils.engine import evaluate
 
 # --- Load rules ---
-with open("src/utils/green_rules.json", encoding="utf-8") as f:
+with open(os.path.join(PROJECT_ROOT, "data", "green_rules.json"), encoding="utf-8") as f:
     rules_json = json.load(f)
 
 # --- Read test file ---
-text = read_txt("checks/simple.txt")
+text = read_txt(os.path.join(PROJECT_ROOT, "tests", "fixtures", "simple.txt"))
 
 # --- Extract features ---
 data = extract_data(text)

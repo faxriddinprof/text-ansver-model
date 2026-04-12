@@ -1,0 +1,77 @@
+[
+  {
+    "file": "tests/fixtures/simple.txt",
+    "expected": "GREEN",
+    "note": "Solar energy, GHG reduction, filters, certificate, 25% building efficiency"
+  },
+  {
+    "file": "tests/fixtures/bad.txt",
+    "expected": "NOT GREEN",
+    "note": "Coal-based project + alcohol production = multiple exclusions triggered"
+  },
+  {
+    "file": "tests/fixtures/medium.txt",
+    "expected": "NOT GREEN",
+    "note": "Hydropower 15MW but no CO2 data, no certificate — insufficient score"
+  },
+  {
+    "file": "tests/fixtures/tricky.txt",
+    "expected": "NOT GREEN",
+    "note": "Solar panels present but used for oil extraction — low score, no certificate"
+  },
+  {
+    "file": "tests/fixtures/big_test.txt",
+    "expected": "GREEN",
+    "note": "Solar+wind station, LEED cert, 30% energy efficiency, CO2 85g/kWh reduction, water management — 5 green criteria clearly met"
+  },
+  {
+    "file": "tests/fixtures/dependent.txt",
+    "expected": "NOT GREEN",
+    "note": "Hydro 20MW but CO2=90 g/kWh exceeds threshold — dependent rule triggered"
+  },
+  {
+    "file": "tests/fixtures/real.txt",
+    "expected": "NOT GREEN",
+    "note": "Real bank application for food factory — not a green project, keyword false positives expected in balanced mode"
+  },
+  {
+    "file": "tests/fixtures/real/fazo_group_esg.json",
+    "expected": "NOT GREEN",
+    "note": "Structured ESG JSON report — FAZO GROUP trikotaj, no green criteria met, JSON pipeline"
+  },
+  {
+    "file": "tests/fixtures/real/context.json",
+    "expected": "GREEN",
+    "note": "Real expert-approved green project: FAZO GROUP trikotaj — Davlat Ekologik Ekspertiza certificate + tashkil qilingan manba (organized emission sources) + quyosh energiya (105 solar panels)"
+  },
+  {
+    "file": "tests/fixtures/adversarial_greenwash.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: generic eco-marketing + ISO 9001 (not ESG cert) — no real ESG signals should score"
+  },
+  {
+    "file": "tests/fixtures/adversarial_industrial_efficiency.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: 14% energy reduction only, no renewables, no ESG certificate — insufficient for GREEN"
+  },
+  {
+    "file": "tests/fixtures/adversarial_solar_oil_mix.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: token solar on petroleum distribution terminal — oil stop factor must override solar claim"
+  },
+  {
+    "file": "tests/fixtures/adversarial_negation.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: explicit negation of all renewable/ESG claims — negation guard must suppress all signals"
+  },
+  {
+    "file": "tests/fixtures/adversarial_planned.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: future/planned renewable claims only, nothing operational — time-status discount must block GREEN"
+  },
+  {
+    "file": "tests/fixtures/adversarial_marketing.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: pure eco-marketing language, no technical evidence — source reliability layer must reject"
+  }
+]
