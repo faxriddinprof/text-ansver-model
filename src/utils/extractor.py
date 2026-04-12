@@ -376,9 +376,9 @@ ESG_ANALYST_PROMPT = """CRITICAL: Your ENTIRE response must be a single valid JS
 Do NOT write ANY explanation, summary, reasoning, or text outside the JSON.
 Start immediately with { and end with }.
 
-You are a structured INFORMATION EXTRACTION system for ESG documents.
+You are a structured SEMANTIC INFORMATION EXTRACTION system for ESG documents.
 
-YOUR ROLE: Extract facts ONLY.
+YOUR ROLE: Extract facts ONLY using SEMANTIC UNDERSTANDING.
 DO NOT decide GREEN / NOT GREEN.
 DO NOT compute score.
 DO NOT write reasoning.
@@ -386,33 +386,53 @@ DO NOT assign confidence.
 
 ---
 
-TASK: Read the document and fill in the JSON below.
+TASK: Read the document and fill in the JSON using MEANING, not just keywords.
 
-For each field set "value" to true or false based ONLY on clear, explicit evidence.
-- If unclear → false
-- If not mentioned → false
-- If mentioned in irrelevant context → false
+Recognize semantic equivalents and paraphrases:
+- "photovoltaic generation" = solar energy → renewable_energy: true
+- "low-carbon electricity from natural sources" = renewable energy → renewable_energy: true
+- "CO2 emission reduction target of 30%" = GHG reduction → ghg_reduction: true
+- "energy consumption optimized by 25%" = energy efficiency → energy_efficiency: true
+- "wastewater recycling facility" = environmental infrastructure → environmental_infrastructure: true
+
+For each field set "value" to true or false.
+- If unclear or not mentioned → false
+- If CO2 is only mentioned as a measurement level (not reduced) → ghg_reduction: false
+- If certificate/sertifikat is bank or quality only — NOT environmental → certificate: false
+- If food fermentation/brewing is not the project's main activity → alcohol: false
+
 Write a short "evidence" quote (max 120 chars) from the text. Empty string if false.
 
 ---
 
-STOP FACTORS — mark true ONLY if this is the project's MAIN activity:
+STOP FACTORS — true ONLY if this is the project's PRIMARY CORE activity:
 
-- coal:    project is primarily coal mining, coal power, or coal processing
-- oil_gas: project is primarily oil/gas extraction or refining
-- alcohol: project is primarily alcohol production, brewing, or distillery
-- tobacco: project is primarily tobacco production or sales
-- gambling: project is primarily gambling, casino, or betting
+- coal:    primary business = coal mining, coal power plant, or coal processing
+- oil_gas: primary business = oil/gas extraction or refining
+- alcohol: primary business = alcohol production, brewery, or distillery
+- tobacco: primary business = tobacco production or cigarette manufacturing
+- gambling: primary business = casino, gambling facility, or betting operations
+
+DISAMBIGUATION:
+- Renewable energy project near coal region → coal: false
+- Oil used as auxiliary fuel for non-oil project → oil_gas: false
+- Juice/food factory with fermentation step → alcohol: false
+- Brewing company → alcohol: true
 
 ---
 
-GREEN CRITERIA — mark true ONLY if explicitly and clearly stated as part of the project:
+GREEN CRITERIA — true ONLY if explicitly and clearly part of the project:
 
-- renewable_energy:               solar / wind / hydro / geothermal used as main energy source
-- energy_efficiency:              energy efficiency improvement ≥20% OR clearly stated improvement
-- ghg_reduction:                  explicit CO2 / greenhouse gas reduction target or result
-- environmental_infrastructure:   water treatment, recycling system, or industrial pollution control
-- certificate:                    EDGE / LEED / BREEAM or official environmental certificate obtained
+- renewable_energy:              solar / wind / hydro / geothermal / photovoltaic as MAIN power source
+                                 "low-carbon electricity generation", "clean energy generation" also qualify
+- energy_efficiency:             energy efficiency improvement ≥20% OR clearly stated energy optimization
+                                 "energy-saving reconstruction", "thermal insulation upgrade" also qualify
+- ghg_reduction:                 explicit CO2/GHG REDUCTION target or achieved result — not just emission levels
+                                 "emission reduction", "carbon footprint reduced", "decarbonization" qualify
+- environmental_infrastructure:  water treatment facility, recycling plant, industrial pollution control
+                                 "dust-gas filters installed", "wastewater management system" also qualify
+- certificate:                   EDGE / LEED / BREEAM / ISO 14001 or official ENVIRONMENTAL certificate
+                                 Generic bank, quality, or compliance certificates do NOT qualify
 
 ---
 
@@ -543,97 +563,337 @@ def _criterion_confirmed(crit_name: str, text_lower: str) -> bool:
     return bool(kws) and any(kw in text_lower for kw in kws)
 
 
+# ---------------------------------------------------------------------------
+# Semantic Concept Maps  (3 tiers: strong → 1.0 | partial → 0.6 | weak → 0.3)
+# ---------------------------------------------------------------------------
+# Each entry is a list of SYNONYM GROUPS.  ANY phrase match within a group
+# counts as a hit for that tier.  Highest tier wins.
+# New maps use actual UTF-8 Cyrillic chars for readability.
+
+_GREEN_SEMANTIC_CONCEPTS: dict[str, dict[str, list[list[str]]]] = {
+    "renewable_energy": {
+        "strong": [
+            ["quyosh panellari", "quyosh paneli", "solar panel", "photovoltaic"],
+            ["shamol turbina", "wind turbine", "ветрогенератор", "ветроустановка"],
+            ["gidroelektrostantsiya", "hydroelectric station", "гидроэлектростанция", "гэс"],
+            ["geothermal", "геотермальн"],
+            ["solar farm", "solar park", "wind farm", "wind power plant"],
+        ],
+        "partial": [
+            ["quyosh energiya", "solar energy", "солнечная энергия", "solar power"],
+            ["shamol energiya", "wind energy", "ветровая энергия", "wind power"],
+            ["qayta tiklanuvchi energiya", "renewable energy", "возобновляемая энергия"],
+            ["past karbon elektr", "low-carbon electricity", "low carbon generation",
+             "low-carbon generation"],
+            ["toza energiya", "clean energy", "чистая энергия", "green energy"],
+            ["gidroelektr", "гидроэнергетик", "гидроэлектр", "gidroenergiya"],
+            ["alternativ energiya", "alternative energy source"],
+        ],
+        "weak": [
+            ["quyosh", "solar", "солнечн"],
+            ["shamol", "ветер"],
+            ["gidro", "hydro"],
+            ["yashil energiya", "green electricity"],
+        ],
+    },
+    "energy_efficiency": {
+        "strong": [
+            ["energiya tejamkorlik darajasi 2", "energiya tejamkorlik 2",
+             "energy efficiency 20%", "20% energy saving",
+             "energiya samaradorligini 2", "energiya samaradorligi 2",
+             "energiya samaradorligi 3", "energy efficiency improvement"],
+            ["iso 50001"],
+            ["energiya sinfi", "energy class", "энергетический класс"],
+        ],
+        "partial": [
+            ["energiya tejamkorlik", "energy saving", "энергосбережен"],
+            ["energiya samaradorligi", "energy efficiency", "энергоэффективн"],
+            ["issiqlik izolyatsiya", "thermal insulation", "теплоизоляц"],
+            ["led yoritish", "led lighting", "светодиодн"],
+            ["energiya iste'molini kamaytirish", "reduce energy consumption",
+             "снижение энергопотребления"],
+            ["past energiya iste'moli", "low energy consumption"],
+            ["aqlli energiya", "smart energy management", "smart grid"],
+            ["rekonstruksiya qilish", "energy-saving reconstruction"],
+        ],
+        "weak": [
+            ["tejamkorlik", "tejam"],
+            ["samaradorlik oshirish", "efficiency improvement"],
+            ["issiqlik tejash", "heat saving", "теплосбережен"],
+        ],
+    },
+    "ghg_reduction": {
+        "strong": [
+            ["co2 kamaytirish", "co2 reduction", "снижение co2", "reduce co2 emissions"],
+            ["issiqxona gazi kamaytirish", "issiqxona gazlar kamaytirish",
+             "greenhouse gas reduction", "сокращение парниковых газов"],
+            ["karbon izini kamaytirish", "carbon footprint reduction",
+             "снижение углеродного следа"],
+            ["net zero", "carbon neutral", "net-zero", "decarbonization",
+             "dekarbonizatsiya"],
+            ["co2 chiqindilari kamaytir", "co2 chiqindilari kamay"],
+        ],
+        "partial": [
+            ["co2", "co\u2082"],
+            ["karbon emissiya", "carbon emission", "выброс углерода"],
+            ["issiqxona gaz", "greenhouse gas", "парниковый газ"],
+            ["past karbon", "low-carbon", "низкоуглеродн"],
+            ["emissiyani kamaytirish", "emission reduction", "снижение выбросов"],
+            ["uglerod kamaytirish", "декарбонизац"],
+        ],
+        "weak": [
+            ["emissiya", "emission", "выброс"],
+            ["iqlim o'zgarish", "climate change", "изменение климата"],
+        ],
+    },
+    "environmental_infrastructure": {
+        "strong": [
+            ["chang-gaz filtr", "chang gaz filtr", "dust-gas filter",
+             "пылегазоулавлив"],
+            ["suv tozalash inshoot", "water treatment facility",
+             "сооружения водоочист"],
+            ["chiqindi qayta ishlash zavod", "waste recycling plant",
+             "завод по переработке отход"],
+            ["oqova suv tozalash", "oqava suv tozalash", "wastewater treatment",
+             "очистка сточных вод"],
+            ["sanoat ifloslanishini nazorat", "industrial pollution control"],
+        ],
+        "partial": [
+            ["suv tozalash", "water treatment", "водоочист"],
+            ["chiqindi qayta ishlash", "waste recycling", "рециклинг",
+             "recycling system"],
+            ["chiqindi suv", "chiqindi suvlar", "chiqindi suvni"],
+            ["oqova suv", "oqava suv", "wastewater", "сточные воды"],
+            ["filtr qurilma", "filtration system", "система фильтрации"],
+            ["kanalizatsiya tozalash", "sewage treatment", "очистка канализации"],
+            ["ifloslanishni nazorat", "pollution control", "контроль загрязнения"],
+            ["chiqindilarni boshqarish", "waste management", "управление отходами"],
+            ["qayta ishlash texnologiya", "recycling technology"],
+        ],
+        "weak": [
+            ["filtr", "filter"],
+            ["qayta ishlash", "recycling"],
+            ["ekologik himoya", "environmental protection facility"],
+        ],
+    },
+    "certificate": {
+        "strong": [
+            ["leed sertifikat", "leed certified", "leed certification", "leed-certified"],
+            ["edge sertifikat", "edge certified", "edge certification"],
+            ["breeam sertifikat", "breeam certified", "breeam certification"],
+            ["iso 14001"],
+        ],
+        "partial": [
+            ["leed"],
+            ["breeam"],
+            ["ekologik sertifikat", "environmental certificate",
+             "экологический сертификат"],
+            ["yashil bino sertifikat", "green building certificate"],
+            ["vakolatli organ tomonidan"],
+            ["atrof-muhit boshqaruv sertifikat",
+             "environmental management certificate"],
+        ],
+        "weak": [],  # plain "sertifikat" alone never qualifies
+    },
+}
+
+_STOP_FACTOR_SEMANTIC: dict[str, dict[str, list[list[str]]]] = {
+    "coal": {
+        "strong": [
+            ["ko'mir qazib olish", "ko\u02BBmir qazib", "coal mining",
+             "добыча угля", "угледобыча"],
+            ["ko'mir elektr stansiya", "ko\u02BBmir elektr", "coal power plant",
+             "coal-fired power", "угольная электростанция"],
+            ["ko'mirni qayta ishlash", "coal processing", "переработка угля"],
+            ["koks ishlab chiqarish", "coke production", "коксохим"],
+        ],
+        "partial": [
+            ["ko'mir", "ko\u02BBmir", "coal", "уголь"],
+        ],
+        "weak": [],
+    },
+    "oil_gas": {
+        "strong": [
+            ["neft qazib olish", "oil extraction", "добыча нефти", "нефтедобыча"],
+            ["gaz qazib olish", "gas extraction", "добыча газа", "газодобыча"],
+            ["neftni rafinirlash", "oil refining", "нефтепереработ"],
+            ["neft-gaz kompaniya", "oil and gas company", "нефтегазовая компания"],
+        ],
+        "partial": [
+            ["neft qazib", "petroleum extraction", "oil well"],
+            ["gaz qazib", "natural gas extraction"],
+            ["neft-gaz", "oil-gas", "нефтегаз"],
+        ],
+        "weak": [
+            ["neft", "oil", "нефть"],
+        ],
+    },
+    "alcohol": {
+        "strong": [
+            ["alkogol ishlab chiqarish", "alcohol production",
+             "производство алкоголя"],
+            ["spirt zavodi", "distillery", "спиртозавод", "спиртовой завод"],
+            ["pivo zavodi", "brewery", "пивоварня", "пивоваренный завод"],
+            ["vino zavodi", "winery", "винодельня"],
+            ["araq ishlab chiqarish", "vodka production"],
+        ],
+        "partial": [
+            ["alkogol", "alcohol", "алкоголь"],
+            ["spirt", "ethanol", "спирт"],
+            ["pivo ishlab chiqar", "beer production", "пивоварение"],
+            ["vino ishlab chiqar", "wine production", "виноделие"],
+        ],
+        "weak": [
+            ["fermentatsiya", "fermentation", "брожение"],
+        ],
+    },
+    "tobacco": {
+        "strong": [
+            ["tamaki ishlab chiqarish", "tobacco production",
+             "производство табака"],
+            ["sigaret ishlab chiqarish", "cigarette manufacturing"],
+            ["tamaki kompaniya", "tobacco company", "табачная компания"],
+        ],
+        "partial": [
+            ["tamaki", "tobacco", "табак"],
+            ["sigaret", "cigarette", "сигарет"],
+        ],
+        "weak": [],
+    },
+    "gambling": {
+        "strong": [
+            ["kazino", "casino", "казино"],
+            ["qimor uyi", "gambling house", "игорный дом"],
+            ["tikish kompaniya", "betting company", "букмекерская компания"],
+        ],
+        "partial": [
+            ["qimor", "gambling", "азартн"],
+            ["tikish", "betting", "ставки"],
+            ["lotereya", "lottery", "лотерея"],
+        ],
+        "weak": [],
+    },
+}
+
+
+def _semantic_strength(name: str, text_lower: str, concept_map: dict) -> float:
+    """
+    Return evidence strength (0.0 | 0.3 | 0.6 | 1.0) via tiered semantic matching.
+    Checks concept tiers strong → partial → weak.
+    Each tier is a list of synonym groups; any single phrase hit within a group
+    counts as a match for that tier.  Highest tier wins.
+    """
+    entry = concept_map.get(name, {})
+    for phrase_group in entry.get("strong", []):
+        if any(phrase in text_lower for phrase in phrase_group):
+            return 1.0
+    for phrase_group in entry.get("partial", []):
+        if any(phrase in text_lower for phrase in phrase_group):
+            return 0.6
+    for phrase_group in entry.get("weak", []):
+        if any(phrase in text_lower for phrase in phrase_group):
+            return 0.3
+    return 0.0
+
+
 def _build_safe_reasoning(validated_flags: dict, rejected: list, notes: list) -> str:
     """
-    Build a 100% Python-generated reasoning string.
+    Build a 100% Python-generated reasoning string from float-scored flags.
     Never uses LLM text.
-
-    Parameters
-    ----------
-    validated_flags : dict  — after validation, keyed as:
-        {"stop_factors": {"coal": {"value": bool}, ...},
-         "green_criteria": {"renewable_energy": {"value": bool}, ...}}
-    rejected        : list  — names of overridden fields
-    notes           : list  — human-readable correction notes
     """
     lines = []
+    stops = validated_flags.get("stop_factors", {})
+    crits = validated_flags.get("green_criteria", {})
 
-    # Stop factors
+    # Stop factors (threshold >= 0.5 = partial or strong evidence)
     triggered = [
-        name for name, obj in validated_flags.get("stop_factors", {}).items()
-        if isinstance(obj, dict) and obj.get("value") is True
+        f"{name}({obj['value']:.1f})"
+        for name, obj in stops.items()
+        if isinstance(obj, dict) and obj.get("value", 0) >= 0.5
     ]
     if triggered:
-        lines.append(f"Stop factors confirmed: {', '.join(triggered)}.")
-        lines.append("Decision: NOT GREEN (stop factor rule).")
+        lines.append(f"Stop factors triggered: {', '.join(triggered)}.")
+        lines.append("Decision: NOT GREEN (exclusion rule).")
         if rejected:
-            lines.append(f"Corrections applied: {', '.join(rejected)}.")
+            lines.append(f"Overridden claims: {', '.join(rejected)}.")
         return " ".join(lines)
 
     # Green criteria
+    total_score = sum(
+        obj.get("value", 0.0) for obj in crits.values() if isinstance(obj, dict)
+    )
     confirmed = [
-        name for name, obj in validated_flags.get("green_criteria", {}).items()
-        if isinstance(obj, dict) and obj.get("value") is True
+        f"{name}({obj['value']:.1f})"
+        for name, obj in crits.items()
+        if isinstance(obj, dict) and obj.get("value", 0) >= 0.5
     ]
-    n = len(confirmed)
+    weak_sigs = [
+        f"{name}({obj['value']:.1f})"
+        for name, obj in crits.items()
+        if isinstance(obj, dict) and 0 < obj.get("value", 0) < 0.5
+    ]
     if confirmed:
-        lines.append(f"Confirmed green criteria ({n}/5): {', '.join(confirmed)}.")
+        lines.append(f"Confirmed criteria: {', '.join(confirmed)}.")
+    if weak_sigs:
+        lines.append(f"Weak signals: {', '.join(weak_sigs)}.")
+    lines.append(f"Total evidence score: {total_score:.2f}.")
+    if total_score >= 3.0:
+        lines.append("Score \u2265 3.0 \u2192 GREEN.")
     else:
-        lines.append("No green criteria confirmed.")
-
-    if n >= 3:
-        lines.append(f"{n} \u22653 required \u2192 GREEN.")
-    else:
-        lines.append(f"Only {n} of 3 required criteria met \u2192 NOT GREEN.")
+        lines.append(f"Score {total_score:.2f} < 3.0 \u2192 NOT GREEN.")
 
     if rejected:
         lines.append(f"Overridden LLM claims: {', '.join(rejected)}.")
-
     return " ".join(lines)
 
 
 def _compute_confidence(validated_flags: dict, rejected: list) -> int:
     """
-    Rule-based confidence score (0–100).
+    Calibrated confidence score (0–100).
 
-    Base: 50
-    +10  per confirmed green criterion
-    +10  if stop factor confirmed (very certain NOT GREEN)
-    +5   per strong-signal criterion (renewable_energy, ghg_reduction, certificate)
-    -15  per rejected (overridden) LLM claim
-    Clamp to [0, 100].
+    Formula:
+        40
+        + 20 × average_evidence_strength  (green criteria scores, 0.0–1.0)
+        + 10 × strong_evidence_count       (criteria with value == 1.0)
+        + 10  if any stop factor triggered  (very certain NOT GREEN)
+        - 15 × rejected_count              (each overridden LLM claim = uncertainty)
+    Clamped to [0, 100].
     """
-    criteria  = validated_flags.get("green_criteria", {})
-    stops     = validated_flags.get("stop_factors", {})
-    n_conf    = sum(1 for v in criteria.values() if isinstance(v, dict) and v.get("value"))
-    any_stop  = any(v.get("value") for v in stops.values() if isinstance(v, dict))
+    crits    = validated_flags.get("green_criteria", {})
+    stops    = validated_flags.get("stop_factors", {})
 
-    confidence = 50 + n_conf * 10
+    values       = [v.get("value", 0.0) for v in crits.values() if isinstance(v, dict)]
+    avg_strength = sum(values) / max(len(values), 1)
+    strong_count = sum(1 for s in values if s >= 1.0)
+    any_stop     = any(v.get("value", 0) >= 0.5 for v in stops.values() if isinstance(v, dict))
+
+    confidence  = 40
+    confidence += int(20 * avg_strength)
+    confidence += 10 * strong_count
     if any_stop:
-        confidence += 10   # very certain
+        confidence += 10
+    confidence -= 15 * len(rejected)
 
-    strong = {"renewable_energy", "ghg_reduction", "certificate"}
-    for sc in strong:
-        cv = criteria.get(sc, {})
-        if isinstance(cv, dict) and cv.get("value"):
-            confidence += 5
-
-    confidence -= len(rejected) * 15
     return max(0, min(100, confidence))
 
 
 def _validate_esg_response(raw_esg: dict, text: str) -> dict:
     """
-    Trust-but-verify layer.
+    Semantic trust-but-verify layer  (replaces keyword-only validation).
 
-    Validates every LLM-claimed TRUE flag against the raw document text
-    using keyword/synonym checks.  Overrides unsupported claims to FALSE.
+    For every LLM claim this layer:
+      1. Computes an independent semantic strength score (0.0–1.0) from the text.
+      2. LLM True  + semantic > 0.0 → use semantic score (validated).
+      3. LLM True  + semantic = 0.0 → override to 0.0 (rejected).
+      4. LLM False + semantic = 1.0 → promote to 0.7
+             (LLM missed a strong semantic signal).
+      5. Otherwise 0.0.
 
-    Returns a new dict:
+    Returns:
     {
         "validated_flags": {
-            "stop_factors":   {name: {"value": bool, "evidence": str}, ...},
-            "green_criteria": {name: {"value": bool, "evidence": str}, ...}
+            "stop_factors":   {name: {"value": float, "evidence": str}, ...},
+            "green_criteria": {name: {"value": float, "evidence": str}, ...}
         },
         "llm_raw_output": <original parsed LLM dict>,
         "rejected_flags": [str, ...],
@@ -645,53 +905,69 @@ def _validate_esg_response(raw_esg: dict, text: str) -> dict:
 
     rejected: list[str] = []
     notes:    list[str] = []
-
-    validated: dict = {
-        "stop_factors":   {},
-        "green_criteria": {},
-    }
+    validated: dict = {"stop_factors": {}, "green_criteria": {}}
 
     # ── Validate stop factors ─────────────────────────────────────────────
     for name, obj in raw_esg.get("stop_factors", {}).items():
         if not isinstance(obj, dict):
-            validated["stop_factors"][name] = {"value": False, "evidence": ""}
+            validated["stop_factors"][name] = {"value": 0.0, "evidence": ""}
             continue
 
-        val  = obj.get("value", False)
-        evid = obj.get("evidence", "")
+        llm_val = obj.get("value", False)
+        evid    = obj.get("evidence", "")
+        sem_s   = _semantic_strength(name, t, _STOP_FACTOR_SEMANTIC)
 
-        if val:
-            kws = _STOP_FACTOR_KEYWORDS.get(name, [])
-            if kws and not any(kw in t for kw in kws):
-                val  = False
-                evid = f"[REJECTED: no '{name}' keywords in text]"
-                rejected.append(f"stop:{name}")
-                notes.append(
-                    f"LLM claimed stop_factor '{name}'=True but no supporting "
-                    f"keywords found \u2192 overridden to False"
-                )
+        if llm_val and sem_s == 0.0:
+            evid = f"[REJECTED: no semantic evidence for '{name}' stop factor]"
+            rejected.append(f"stop:{name}")
+            notes.append(
+                f"LLM claimed stop_factor '{name}'=True but semantic search "
+                f"found no supporting evidence → overridden to 0.0"
+            )
+            final = 0.0
+        elif llm_val:
+            final = sem_s
+        elif sem_s >= 1.0:
+            final = 0.7
+            notes.append(
+                f"stop_factor '{name}': strong semantic evidence (score=1.0) "
+                f"without LLM confirmation → promoted to 0.7"
+            )
+        else:
+            final = 0.0
 
-        validated["stop_factors"][name] = {"value": val, "evidence": evid}
+        validated["stop_factors"][name] = {"value": final, "evidence": evid}
 
     # ── Validate green criteria ───────────────────────────────────────────
     for name, obj in raw_esg.get("green_criteria", {}).items():
         if not isinstance(obj, dict):
-            validated["green_criteria"][name] = {"value": False, "evidence": ""}
+            validated["green_criteria"][name] = {"value": 0.0, "evidence": ""}
             continue
 
-        val  = obj.get("value", False)
-        evid = obj.get("evidence", "")
+        llm_val = obj.get("value", False)
+        evid    = obj.get("evidence", "")
+        sem_s   = _semantic_strength(name, t, _GREEN_SEMANTIC_CONCEPTS)
 
-        if val and not _criterion_confirmed(name, t):
-            val  = False
-            evid = f"[REJECTED: no '{name}' domain keywords in text]"
+        if llm_val and sem_s == 0.0:
+            evid = f"[REJECTED: no semantic evidence for '{name}']"
             rejected.append(f"criteria:{name}")
             notes.append(
-                f"LLM claimed '{name}'=True but no supporting keywords "
-                f"found in text \u2192 overridden to False"
+                f"LLM claimed '{name}'=True but semantic search found no "
+                f"supporting evidence → overridden to 0.0"
             )
+            final = 0.0
+        elif llm_val:
+            final = sem_s
+        elif sem_s >= 1.0:
+            final = 0.7
+            notes.append(
+                f"'{name}': strong semantic evidence (score=1.0) without "
+                f"LLM confirmation → promoted to 0.7"
+            )
+        else:
+            final = 0.0
 
-        validated["green_criteria"][name] = {"value": val, "evidence": evid}
+        validated["green_criteria"][name] = {"value": final, "evidence": evid}
 
     return {
         "validated_flags": validated,
@@ -734,7 +1010,7 @@ def analyze_esg_holistic(text: str) -> dict:
 
                 n_conf = sum(
                     1 for v in vf["green_criteria"].values()
-                    if isinstance(v, dict) and v.get("value")
+                    if isinstance(v, dict) and v.get("value", 0) >= 0.5
                 )
                 print(
                     f"[extractor] LLM extraction (attempt {attempt}): "

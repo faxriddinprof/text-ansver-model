@@ -95,32 +95,33 @@ def run_txt_pipeline(file_path: str) -> dict:
         ):
             # ── Python decision (single source of truth) ──────────────────
             stop_triggered = any(
-                v.get("value") is True
+                v.get("value", 0) >= 0.5
                 for v in stop_facs.values()
                 if isinstance(v, dict)
             )
             score = sum(
-                1 for v in criteria.values()
-                if isinstance(v, dict) and v.get("value") is True
+                v.get("value", 0.0)
+                for v in criteria.values()
+                if isinstance(v, dict)
             )
 
             if stop_triggered:
                 final_status = "NOT GREEN"
-            elif score >= 3:
+            elif score >= 3.0:
                 final_status = "GREEN"
             else:
                 final_status = "NOT GREEN"
 
             # Evidence-annotated passed / failed lists
             passed = [
-                f"{k}: {v.get('evidence', '')[:100]}"
+                f"{k}({v.get('value', 0):.1f}): {v.get('evidence', '')[:80]}"
                 for k, v in criteria.items()
-                if isinstance(v, dict) and v.get("value") is True
+                if isinstance(v, dict) and v.get("value", 0) >= 0.5
             ]
             failed = [
-                f"{k}: {v.get('evidence', '')[:100]}"
+                f"{k}({v.get('value', 0):.1f})"
                 for k, v in criteria.items()
-                if isinstance(v, dict) and v.get("value") is False
+                if isinstance(v, dict) and v.get("value", 0) < 0.5
             ]
 
             return {
@@ -138,7 +139,7 @@ def run_txt_pipeline(file_path: str) -> dict:
                     "failed_rules":              failed,
                     "exclusions_triggered":      [
                         k for k, v in stop_facs.items()
-                        if isinstance(v, dict) and v.get("value") is True
+                        if isinstance(v, dict) and v.get("value", 0) >= 0.5
                     ],
                     "dependent_rules_triggered": [],
                 },
