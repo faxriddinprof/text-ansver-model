@@ -56,6 +56,11 @@ from src.utils.extractor import (
     _compute_dynamic_threshold,
     _compute_ambiguity_level,
     _compute_risk_factors,
+    _build_score_breakdown,
+    _build_decision_explanation,
+    _build_risk_explanation,
+    _build_ambiguity_explanation,
+    _build_confidence_explanation,
 )
 from src.utils.engine import evaluate, evaluate_from_esg_json
 
@@ -136,17 +141,36 @@ def run_txt_pipeline(file_path: str) -> dict:
                 if isinstance(v, dict) and v.get("value", 0) < 0.5
             ]
 
+            amb_level    = esg.get("ambiguity_level", "medium")
+            risk_facts   = esg.get("risk_factors", [])
+            conf_pct     = esg.get("confidence", 50)
+            crit_brkdown = esg.get("criterion_breakdown") or _build_score_breakdown(criteria)
+            explanation  = _build_decision_explanation(
+                final_status, score, threshold, criteria, stop_facs,
+                esg.get("rejected_flags", []),
+            )
+            risk_expl    = esg.get("risk_explanation") or _build_risk_explanation(risk_facts)
+            amb_expl     = esg.get("ambiguity_explanation") or _build_ambiguity_explanation(amb_level, esg.get("rejected_flags", []))
+            conf_expl    = esg.get("confidence_explanation") or _build_confidence_explanation(conf_pct, amb_level, esg.get("rejected_flags", []))
+
             return {
-                "status":           final_status,
-                "score":            score,
-                "threshold":        threshold,
-                "ambiguity_level":  esg.get("ambiguity_level", "medium"),
-                "risk_factors":     esg.get("risk_factors", []),
-                "pipeline":         "txt_esg",
-                "confidence":       esg.get("confidence", 50) / 100,
-                "reason":           esg.get("reason", ""),
-                "rejected_flags":   esg.get("rejected_flags", []),
-                "validation_notes": esg.get("notes", []),
+                "status":                final_status,
+                "score":                 score,
+                "threshold":             threshold,
+                "ambiguity_level":       amb_level,
+                "risk_factors":          risk_facts,
+                "pipeline":              "txt_esg",
+                "confidence":            conf_pct / 100,
+                "confidence_pct":        conf_pct,
+                "reason":                esg.get("reason", ""),
+                "rejected_flags":        esg.get("rejected_flags", []),
+                "validation_notes":      esg.get("notes", []),
+                # Explainability fields
+                "score_breakdown":       crit_brkdown,
+                "explanation":           explanation,
+                "risk_explanation":      risk_expl,
+                "ambiguity_explanation": amb_expl,
+                "confidence_explanation":conf_expl,
                 "decision_reasons": {
                     "stop_factors":              stop_facs,
                     "green_criteria":            criteria,
@@ -240,6 +264,14 @@ def run_context_json_pipeline(file_path: str) -> dict:
     failed = [f"{k}({v:.1f})" for k, v in criteria_scores.items() if v < 0.5]
     strong = sum(1 for v in criteria_scores.values() if v >= 1.0)
 
+    explanation = _build_decision_explanation(
+        final_status, score, threshold, criteria, stop_facs, []
+    )
+    risk_expl  = _build_risk_explanation(risk_factors)
+    amb_expl   = _build_ambiguity_explanation(amb, [])
+    conf_pct   = min(95, 40 + 15 * strong)
+    conf_expl  = _build_confidence_explanation(conf_pct, amb, [])
+
     reason = (
         f"Semantic criteria: {', '.join(passed) or 'none'}. "
         f"Calibrated score: {calibrated:.2f} (threshold: {threshold:.1f}). "
@@ -248,16 +280,23 @@ def run_context_json_pipeline(file_path: str) -> dict:
     )
 
     return {
-        "status":           final_status,
-        "score":            score,
-        "threshold":        threshold,
-        "ambiguity_level":  amb,
-        "risk_factors":     risk_factors,
-        "pipeline":         "context_json_semantic",
-        "confidence":       min(1.0, 0.5 + 0.1 * strong),
-        "reason":           reason,
-        "rejected_flags":   [],
-        "validation_notes": [],
+        "status":                final_status,
+        "score":                 score,
+        "threshold":             threshold,
+        "ambiguity_level":       amb,
+        "risk_factors":          risk_factors,
+        "pipeline":              "context_json_semantic",
+        "confidence":            min(1.0, conf_pct / 100),
+        "confidence_pct":        conf_pct,
+        "reason":                reason,
+        "rejected_flags":        [],
+        "validation_notes":      [],
+        # Explainability fields
+        "score_breakdown":       _build_score_breakdown(criteria),
+        "explanation":           explanation,
+        "risk_explanation":      risk_expl,
+        "ambiguity_explanation": amb_expl,
+        "confidence_explanation":conf_expl,
         "decision_reasons": {
             "stop_factors":              stop_facs,
             "green_criteria":            criteria,
@@ -334,16 +373,22 @@ for entry in expected_list:
     if QUIET:
         sys.stdout = sys.__stdout__
 
-    actual           = result["status"]
-    score            = result.get("score", 0)
-    threshold        = result.get("threshold", 3.0)
-    ambiguity        = result.get("ambiguity_level", "")
-    risk_factors     = result.get("risk_factors", [])
-    confidence       = result.get("confidence")
-    pipeline         = result.get("pipeline", "txt")
-    reason           = result.get("reason", "")
-    rejected_flags   = result.get("rejected_flags", [])
-    validation_notes = result.get("validation_notes", [])
+    actual            = result["status"]
+    score             = result.get("score", 0)
+    threshold         = result.get("threshold", 3.0)
+    ambiguity         = result.get("ambiguity_level", "")
+    risk_factors      = result.get("risk_factors", [])
+    confidence        = result.get("confidence")
+    confidence_pct    = result.get("confidence_pct")
+    pipeline          = result.get("pipeline", "txt")
+    rejected_flags    = result.get("rejected_flags", [])
+    validation_notes  = result.get("validation_notes", [])
+    # Explainability
+    explanation       = result.get("explanation", "")
+    risk_explanation  = result.get("risk_explanation", "")
+    amb_explanation   = result.get("ambiguity_explanation", "")
+    conf_explanation  = result.get("confidence_explanation", "")
+    score_breakdown   = result.get("score_breakdown", {})
 
     # TXT pipeline extras
     reasons          = result.get("decision_reasons", {})
@@ -377,15 +422,23 @@ for entry in expected_list:
             "dependent_rules_triggered": dependent_rules,
         })
 
-    conf_str = f"  confidence: {confidence:.0%}" if confidence is not None else ""
-    amb_str  = f"  ambiguity: {ambiguity}" if ambiguity else ""
+    conf_str  = f"{confidence_pct}%" if confidence_pct is not None else (f"{confidence:.0%}" if confidence is not None else "n/a")
+    amb_str   = f"  ambiguity: {ambiguity}" if ambiguity else ""
     print(f"  Pipeline : [{pipeline}]")
     print(f"  Expected : {expected}")
-    print(f"  Actual   : {actual}  (score: {score:.2f}  threshold: {threshold:.1f}{conf_str}{amb_str})")
-    if reason:
-        print(f"  Reason   : {reason}")
-    if risk_factors:
-        print(f"  Risk     : {' | '.join(risk_factors[:4])}")
+    print(f"  Actual   : {actual}  (score: {score:.2f}  threshold: {threshold:.1f}  confidence: {conf_str}{amb_str})")
+    if explanation:
+        print(f"  Decision : {explanation}")
+    if risk_explanation and "No significant" not in risk_explanation:
+        print(f"  Risk     : {risk_explanation}")
+    if amb_explanation and ambiguity in ("medium", "high"):
+        print(f"  Ambiguity: {amb_explanation}")
+    if conf_explanation:
+        print(f"  Confidence: {conf_explanation}")
+    if score_breakdown:
+        for crit_name, crit_data in score_breakdown.items():
+            if isinstance(crit_data, dict) and crit_data.get("score", 0) > 0:
+                print(f"  [{crit_data['label']}]: {crit_data['impact']}  — {crit_data['reason']}")
     if rejected_flags:
         for rf in rejected_flags:
             print(f"  Corrected: {rf}")

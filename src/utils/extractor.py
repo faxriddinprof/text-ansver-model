@@ -976,6 +976,277 @@ def _compute_risk_factors(criteria: dict, stops: dict, rejected: list) -> list:
     return factors
 
 
+# ---------------------------------------------------------------------------
+# Explainability Layer
+# ---------------------------------------------------------------------------
+
+_CRITERION_DISPLAY: dict[str, str] = {
+    "renewable_energy":             "Renewable Energy",
+    "energy_efficiency":            "Energy Efficiency",
+    "ghg_reduction":                "GHG / Emissions Reduction",
+    "environmental_infrastructure": "Environmental Infrastructure",
+    "certificate":                  "Environmental Certification",
+}
+
+_CRITERION_REASONS: dict[str, dict] = {
+    "renewable_energy": {
+        1.0: "Strong evidence of renewable energy systems (solar panels, wind turbines, or hydropower) confirmed in the document.",
+        0.6: "Partial evidence of renewable energy use identified, but details are incomplete.",
+        0.3: "Indirect references to renewable energy found, but not sufficiently substantiated.",
+        0.0: "No renewable energy systems identified in this project.",
+    },
+    "energy_efficiency": {
+        1.0: "Documented energy efficiency improvements with measurable targets confirmed.",
+        0.6: "Energy efficiency measures mentioned, but full implementation details are missing.",
+        0.3: "General references to energy savings found, but not substantiated with data.",
+        0.0: "No measurable energy efficiency improvements identified.",
+    },
+    "ghg_reduction": {
+        1.0: "Quantified greenhouse gas or emissions reduction commitments clearly documented.",
+        0.6: "Emissions reduction measures mentioned, but supporting data is incomplete.",
+        0.3: "Indirect references to emissions reduction found.",
+        0.0: "No greenhouse gas or emissions reduction evidence found.",
+    },
+    "environmental_infrastructure": {
+        1.0: "Environmental control systems (filters, treatment facilities, emission controls) confirmed.",
+        0.6: "Environmental management systems evidenced, but not fully detailed.",
+        0.3: "General environmental management references found, without specific infrastructure.",
+        0.0: "No environmental infrastructure or control systems identified.",
+    },
+    "certificate": {
+        1.0: "Valid environmental certification (state eco-approval, ISO 14001, LEED, or equivalent) confirmed.",
+        0.6: "Environmental certification indicators found, but not fully verified.",
+        0.3: "References to certification found, but type and validity are unclear.",
+        0.0: "No environmental certification found. Note: quality certificates (ISO 9001) do not qualify as ESG certification.",
+    },
+}
+
+_STOP_RISK_MESSAGES: dict[str, str] = {
+    "coal":     "The project has direct involvement in coal-related activities, which is a critical environmental exclusion under green financing standards.",
+    "oil_gas":  "The project has exposure to oil and gas operations. This significantly increases environmental risk and requires stronger evidence of mitigating measures.",
+    "alcohol":  "The project involves alcohol production, which is excluded from green project classification.",
+    "tobacco":  "The project involves tobacco-related activities, which are excluded from green financing.",
+    "gambling": "The project involves gambling activities, which are excluded from green financing.",
+}
+
+
+def _criterion_reason(name: str, score: float) -> str:
+    """Return a human-readable sentence explaining why a criterion received its score."""
+    reasons = _CRITERION_REASONS.get(name)
+    if not reasons:
+        if score >= 1.0:
+            return "Strong evidence confirmed in the document."
+        if score >= 0.5:
+            return "Partial evidence found in the document."
+        if score > 0.0:
+            return "Weak or indirect evidence only."
+        return "No supporting evidence found."
+    if score >= 1.0:
+        return reasons[1.0]
+    if score >= 0.5:
+        return reasons[0.6]
+    if score > 0.0:
+        return reasons[0.3]
+    return reasons[0.0]
+
+
+def _build_score_breakdown(criteria: dict) -> dict:
+    """
+    Per-criterion breakdown for business users.
+
+    Each entry: {"label", "score", "impact", "reason"}
+    """
+    breakdown = {}
+    for name, obj in criteria.items():
+        if not isinstance(obj, dict):
+            continue
+        score   = obj.get("value", 0.0)
+        label   = _CRITERION_DISPLAY.get(name, name.replace("_", " ").title())
+        impact  = f"+{score:.1f}" if score > 0 else "0.0"
+        reason  = _criterion_reason(name, score)
+        breakdown[name] = {
+            "label":  label,
+            "score":  round(score, 2),
+            "impact": impact,
+            "reason": reason,
+        }
+    return breakdown
+
+
+def _build_decision_explanation(
+    decision: str,
+    score: float,
+    threshold: float,
+    criteria: dict,
+    stops: dict,
+    rejected: list,
+) -> str:
+    """
+    Plain-language paragraph explaining the final classification.
+    Written for non-technical managers, auditors, and regulators.
+    """
+    confirmed = [
+        _CRITERION_DISPLAY.get(k, k.replace("_", " ").title())
+        for k, v in criteria.items()
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    ]
+    missing = [
+        _CRITERION_DISPLAY.get(k, k.replace("_", " ").title())
+        for k, v in criteria.items()
+        if isinstance(v, dict) and v.get("value", 0) < 0.5
+    ]
+    stop_triggered = [
+        k for k, v in stops.items()
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    ]
+
+    if stop_triggered:
+        stop_names = " and ".join(
+            _STOP_RISK_MESSAGES.get(k, k.replace("_", " ")) for k in stop_triggered[:2]
+        )
+        return (
+            f"This project is classified as NOT GREEN due to the presence of "
+            f"activities that are excluded from green financing. "
+            f"Specifically: {stop_names} "
+            f"ESG criteria cannot override an exclusion trigger."
+        )
+
+    if decision == "GREEN":
+        conf_list = ", ".join(confirmed) if confirmed else "multiple criteria"
+        return (
+            f"This project qualifies as GREEN. "
+            f"The following environmental criteria are confirmed: {conf_list}. "
+            f"The total evidence score ({score:.2f}) meets the required threshold "
+            f"({threshold:.1f}) for a project of this type."
+        )
+
+    # NOT GREEN — insufficient score
+    parts = []
+    if confirmed:
+        parts.append(
+            f"Although {', '.join(confirmed)} {'is' if len(confirmed)==1 else 'are'} "
+            f"present, the evidence is insufficient on its own."
+        )
+    if missing:
+        parts.append(
+            f"No supporting evidence was found for: {', '.join(missing)}."
+        )
+    if rejected:
+        parts.append(
+            f"Additionally, {len(rejected)} claim(s) made in the document could "
+            f"not be verified against the document content and were excluded from scoring."
+        )
+    score_sentence = (
+        f"The total ESG score ({score:.2f}) is below the required "
+        f"threshold ({threshold:.1f}) for a project of this type."
+    )
+    base = (
+        "This project is classified as NOT GREEN because it lacks sufficient "
+        "environmental impact evidence. "
+    )
+    return base + " ".join(parts) + " " + score_sentence
+
+
+def _build_risk_explanation(risk_factors: list) -> str:
+    """Convert machine risk flags into natural language risk assessment."""
+    if not risk_factors:
+        return "No significant risk factors identified."
+
+    sentences = []
+    for flag in risk_factors:
+        if flag.startswith("STOP:"):
+            key = flag.split(":")[1].split("(")[0]
+            msg = _STOP_RISK_MESSAGES.get(key, f"Critical exclusion triggered: {key}.")
+            sentences.append(msg)
+        elif flag.startswith("SOFT_RISK:"):
+            key = flag.split(":")[1].split("(")[0]
+            base = _STOP_RISK_MESSAGES.get(key, f"Potential risk: {key}.")
+            sentences.append(
+                base.replace("has direct involvement", "has indirect exposure")
+                    .replace("has exposure", "shows indicators of exposure")
+                    .replace("significantly increases", "may increase")
+            )
+        elif flag.startswith("REJECTED:"):
+            part = flag.replace("REJECTED:criteria:", "").replace("REJECTED:stop:", "")
+            name = _CRITERION_DISPLAY.get(part, part.replace("_", " ").title())
+            sentences.append(
+                f"A claim regarding '{name}' in the document could not be confirmed "
+                f"by independent evidence verification and was excluded from scoring."
+            )
+        elif flag.startswith("WEAK_EVIDENCE:"):
+            key = flag.split(":")[1].split("(")[0]
+            name = _CRITERION_DISPLAY.get(key, key.replace("_", " ").title())
+            sentences.append(
+                f"The evidence for '{name}' is weak and inconclusive."
+            )
+
+    if not sentences:
+        return "No significant risk factors identified."
+    return " ".join(sentences)
+
+
+def _build_ambiguity_explanation(ambiguity_level: str, rejected: list) -> str:
+    """Plain-language explanation of the evidence ambiguity level."""
+    if ambiguity_level == "low":
+        return (
+            "Evidence quality is good. The document contains clear, verifiable "
+            "information that supports the evaluation."
+        )
+    if ambiguity_level == "medium":
+        if rejected:
+            return (
+                "The evaluation contains moderate uncertainty. One or more statements "
+                "in the document could not be independently verified, which reduces "
+                "confidence in the result."
+            )
+        return (
+            "The evaluation contains moderate uncertainty due to limited or "
+            "indirect evidence in the document."
+        )
+    # high
+    if rejected:
+        return (
+            "The evaluation has high uncertainty. Multiple claims in the document "
+            "were not supported by verifiable content, or conflicting signals are "
+            "present. Independent due diligence is strongly recommended before "
+            "making a financing decision."
+        )
+    return (
+        "The evaluation has high uncertainty due to weak, indirect, or conflicting "
+        "evidence. The document does not provide sufficient clarity for a "
+        "high-confidence assessment. Independent review is recommended."
+    )
+
+
+def _build_confidence_explanation(
+    confidence: int, ambiguity_level: str, rejected: list
+) -> str:
+    """Plain-language explanation of the confidence score."""
+    pct = f"{confidence}%"
+    if confidence >= 75:
+        level = "high"
+        base  = f"Confidence is high ({pct}). The decision is well-supported by strong, verifiable evidence."
+    elif confidence >= 50:
+        level = "moderate"
+        base  = f"Confidence is moderate ({pct}). The decision is based on partial evidence."
+    else:
+        level = "low"
+        base  = f"Confidence is low ({pct}). The available evidence is limited, weak, or inconsistent."
+
+    reasons = []
+    if ambiguity_level == "high":
+        reasons.append("high ambiguity in the source document")
+    elif ambiguity_level == "medium":
+        reasons.append("moderate ambiguity in the source document")
+    if rejected:
+        n = len(rejected)
+        reasons.append(f"{n} unverified claim{'s' if n > 1 else ''} rejected during validation")
+
+    if reasons and level != "high":
+        base += f" Contributing factors: {'; '.join(reasons)}."
+    return base
+
+
 def _compute_confidence(validated_flags: dict, rejected: list) -> int:
     """
     Evidence-based confidence (0–100).
@@ -1166,16 +1437,25 @@ def analyze_esg_holistic(text: str) -> dict:
                 vfc = vf["green_criteria"]
                 vfs = vf["stop_factors"]
                 calibrated, breakdown = _compute_calibrated_score(vfc, vfs)
-                amb = _compute_ambiguity_level(vfc, vfs, rejected)
-                result["calibrated_score"] = calibrated
-                result["score_breakdown"]  = breakdown
-                result["threshold"]        = _compute_dynamic_threshold(vfc, vfs)
-                result["ambiguity_level"]  = amb
-                result["risk_factors"]     = _compute_risk_factors(vfc, vfs, rejected)
-                result["semantic_signals"] = {
+                amb        = _compute_ambiguity_level(vfc, vfs, rejected)
+                conf       = _compute_confidence(vf, rejected)
+                thresh     = _compute_dynamic_threshold(vfc, vfs)
+                risk_facts = _compute_risk_factors(vfc, vfs, rejected)
+
+                result["calibrated_score"]  = calibrated
+                result["penalty_breakdown"] = breakdown
+                result["threshold"]         = thresh
+                result["ambiguity_level"]   = amb
+                result["risk_factors"]      = risk_facts
+                result["semantic_signals"]  = {
                     k: v.get("value", 0.0)
                     for k, v in vfc.items() if isinstance(v, dict)
                 }
+                # Explainability fields (decision-independent — built here)
+                result["criterion_breakdown"]     = _build_score_breakdown(vfc)
+                result["ambiguity_explanation"]   = _build_ambiguity_explanation(amb, rejected)
+                result["confidence_explanation"]  = _build_confidence_explanation(conf, amb, rejected)
+                result["risk_explanation"]        = _build_risk_explanation(risk_facts)
 
                 n_conf = sum(
                     1 for v in vf["green_criteria"].values()
