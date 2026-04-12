@@ -73,5 +73,15 @@
     "file": "tests/fixtures/adversarial_marketing.txt",
     "expected": "NOT GREEN",
     "note": "ADVERSARIAL: pure eco-marketing language, no technical evidence — source reliability layer must reject"
+  },
+  {
+    "file": "tests/fixtures/adversarial_under_construction.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: all criteria under construction (0.6 multiplier each) — construction time-status discount must block GREEN"
+  },
+  {
+    "file": "tests/fixtures/adversarial_partial.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: phase 1 partially implemented only (0.7 multiplier each) — partial time-status discount must block GREEN"
   }
 ]

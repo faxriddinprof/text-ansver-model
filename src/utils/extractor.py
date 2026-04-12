@@ -1076,25 +1076,29 @@ def _detect_time_status(evidence_snippet: str) -> float:
     is_construction = bool(_CONSTRUCTION_PATTERNS.search(t))
     is_planned      = bool(_PLANNED_PATTERNS.search(t))
 
-    if is_operational and not is_planned and not is_partial:
+    if is_operational and not is_planned and not is_partial and not is_construction:
         return 1.0
-    if is_partial:
-        return 0.8
     if is_construction and not is_planned:
         return 0.6
     if is_planned and not is_operational:
         return 0.4
-    if is_operational and is_planned:
-        return 0.8   # mixed deployment
-    return 0.7       # ambiguous tense — slight discount
+    if is_partial or is_operational:
+        return 0.7   # partially implemented or mixed deployment
+    return 0.7       # ambiguous tense — partial discount
 
 
 def _detect_time_status_label(evidence_snippet: str) -> str:
     """Return a human-readable time-status label for debug output."""
-    mult = _detect_time_status(evidence_snippet)
-    mapping = {1.0: "operational", 0.8: "partial/mixed", 0.6: "under_construction",
-               0.4: "planned", 0.7: "ambiguous"}
-    return mapping.get(mult, "ambiguous")
+    t = evidence_snippet
+    if bool(_PLANNED_PATTERNS.search(t)) and not bool(_OPERATIONAL_PATTERNS.search(t)):
+        return "planned"
+    if bool(_CONSTRUCTION_PATTERNS.search(t)) and not bool(_PLANNED_PATTERNS.search(t)):
+        return "construction"
+    if bool(_PARTIAL_PATTERNS.search(t)):
+        return "partial"
+    if bool(_OPERATIONAL_PATTERNS.search(t)) and not bool(_PLANNED_PATTERNS.search(t)):
+        return "operational"
+    return "partial"  # ambiguous defaults to partial-tier discount
 
 
 def _get_evidence_context(full_text: str, evidence_snippet: str, window: int = 160) -> str:
