@@ -58,5 +58,20 @@
     "file": "tests/fixtures/adversarial_solar_oil_mix.txt",
     "expected": "NOT GREEN",
     "note": "ADVERSARIAL: token solar on petroleum distribution terminal — oil stop factor must override solar claim"
+  },
+  {
+    "file": "tests/fixtures/adversarial_negation.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: explicit negation of all renewable/ESG claims — negation guard must suppress all signals"
+  },
+  {
+    "file": "tests/fixtures/adversarial_planned.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: future/planned renewable claims only, nothing operational — time-status discount must block GREEN"
+  },
+  {
+    "file": "tests/fixtures/adversarial_marketing.txt",
+    "expected": "NOT GREEN",
+    "note": "ADVERSARIAL: pure eco-marketing language, no technical evidence — source reliability layer must reject"
   }
 ]

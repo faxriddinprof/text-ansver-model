@@ -61,6 +61,8 @@ from src.utils.extractor import (
     _build_risk_explanation,
     _build_ambiguity_explanation,
     _build_confidence_explanation,
+    _build_missing_criteria_explanation,
+    normalize_text,
 )
 from src.utils.engine import evaluate, evaluate_from_esg_json
 
@@ -96,7 +98,7 @@ if SINGLE_FILE:
 
 def run_txt_pipeline(file_path: str) -> dict:
     """TXT pipeline: LLM extraction → Python decision (primary) → rule engine (fallback)."""
-    text = read_txt(file_path)
+    text = normalize_text(read_txt(file_path))
 
     # ── PRIMARY: LLM extracts facts, Python decides ───────────────────────
     if _ollama_available():
@@ -152,6 +154,9 @@ def run_txt_pipeline(file_path: str) -> dict:
             risk_expl    = esg.get("risk_explanation") or _build_risk_explanation(risk_facts)
             amb_expl     = esg.get("ambiguity_explanation") or _build_ambiguity_explanation(amb_level, esg.get("rejected_flags", []))
             conf_expl    = esg.get("confidence_explanation") or _build_confidence_explanation(conf_pct, amb_level, esg.get("rejected_flags", []))
+            missing_info = esg.get("missing_criteria") or _build_missing_criteria_explanation(
+                criteria, stop_facs, score, threshold
+            )
 
             return {
                 "status":                final_status,
@@ -171,6 +176,7 @@ def run_txt_pipeline(file_path: str) -> dict:
                 "risk_explanation":      risk_expl,
                 "ambiguity_explanation": amb_expl,
                 "confidence_explanation":conf_expl,
+                "missing_criteria":      missing_info,
                 "decision_reasons": {
                     "stop_factors":              stop_facs,
                     "green_criteria":            criteria,
@@ -271,6 +277,7 @@ def run_context_json_pipeline(file_path: str) -> dict:
     amb_expl   = _build_ambiguity_explanation(amb, [])
     conf_pct   = min(95, 40 + 15 * strong)
     conf_expl  = _build_confidence_explanation(conf_pct, amb, [])
+    missing_info = _build_missing_criteria_explanation(criteria, stop_facs, score, threshold)
 
     reason = (
         f"Semantic criteria: {', '.join(passed) or 'none'}. "
@@ -297,6 +304,7 @@ def run_context_json_pipeline(file_path: str) -> dict:
         "risk_explanation":      risk_expl,
         "ambiguity_explanation": amb_expl,
         "confidence_explanation":conf_expl,
+        "missing_criteria":      missing_info,
         "decision_reasons": {
             "stop_factors":              stop_facs,
             "green_criteria":            criteria,
@@ -414,7 +422,7 @@ for entry in expected_list:
             "threshold": threshold,
             "ambiguity_level": ambiguity,
             "confidence": confidence,
-            "reason": reason,
+            "reason": result.get("reason", ""),
             "risk_factors": risk_factors,
             "passed_rules": passed_rules,
             "failed_rules": failed_rules,
@@ -435,6 +443,11 @@ for entry in expected_list:
         print(f"  Ambiguity: {amb_explanation}")
     if conf_explanation:
         print(f"  Confidence: {conf_explanation}")
+    missing_info = result.get("missing_criteria", {})
+    if actual == "NOT GREEN" and missing_info and missing_info.get("summary"):
+        print(f"  Missing  : {missing_info['summary']}")
+        for m in missing_info.get("missing_criteria", [])[:3]:
+            print(f"  → {m['label']}: {m['guidance'][:90]}")
     if score_breakdown:
         for crit_name, crit_data in score_breakdown.items():
             if isinstance(crit_data, dict) and crit_data.get("score", 0) > 0:

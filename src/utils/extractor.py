@@ -785,23 +785,367 @@ _STOP_FACTOR_SEMANTIC: dict[str, dict[str, list[list[str]]]] = {
 }
 
 
+
+
+# ---------------------------------------------------------------------------
+# Advanced Signal Processing
+# ---------------------------------------------------------------------------
+
+# 1 ── Negation detection
+# Words that, within a short window around a keyword, negate its meaning.
+_SEMANTIC_NEGATION_PATTERNS: list[str] = [
+    # Uzbek
+    r"\byo['']q\b", r"\bemas\b", r"\bqilinmagan\b", r"\bko'rilmagan\b",
+    r"\bmavjud emas\b", r"\brejada yo['']q\b", r"\bnazarda tutilmagan\b",
+    r"\bbajarilmagan\b", r"\butilizatsiya qilinmagan\b",
+    # Russian
+    r"\bне\b", r"\bнет\b", r"\bотсутству", r"\bне используется\b",
+    r"\bне применяется\b", r"\bне предусмотрен", r"\bне установлен",
+    # English
+    r"\bnot\b", r"\bno\s+\w+", r"\bwithout\b", r"\bdoes not\b",
+    r"\bdid not\b", r"\bnever\b", r"\black[s]?\b", r"\babsence of\b",
+]
+
+_COMPILED_NEGATION = [re.compile(p, re.IGNORECASE) for p in _SEMANTIC_NEGATION_PATTERNS]
+
+
+def _has_negation_nearby(text: str, match_start: int, match_end: int,
+                          window: int = 120) -> bool:
+    """Return True if a negation word appears within `window` chars of the match."""
+    start   = max(0, match_start - window)
+    end     = min(len(text), match_end + window)
+    snippet = text[start:end]
+    return any(pat.search(snippet) for pat in _COMPILED_NEGATION)
+
+
+# 2 ── Numeric intelligence
+# Thresholds that determine whether a numeric value constitutes valid evidence.
+_NUMERIC_RULES: dict[str, dict] = {
+    "energy_efficiency": {
+        # % energy/carbon reduction — must be ≥ 20 to count as strong
+        "pattern": re.compile(
+            r"(\d{1,3}(?:[.,]\d+)?)\s*%\s*(?:"
+            r"energy\s*(?:saving|efficien|reduction)|"
+            r"energiya\s*(?:tejam|samaradorl|kamay)|"
+            r"снижени[ея]\s*энергопотреблен|"
+            r"энергоэффективност|energoeffektivnost"
+            r")", re.IGNORECASE
+        ),
+        "strong":  20.0,   # ≥ 20% → strong (1.0)
+        "partial": 10.0,   # ≥ 10% → partial (0.6)
+        "units":   "%",
+        "inverted": False,  # higher = better
+    },
+    "ghg_reduction": {
+        # CO₂ g/kWh — for hydro: must be < 50 to qualify as green
+        "pattern": re.compile(
+            r"(\d{1,4}(?:[.,]\d+)?)\s*g\s*/?\s*kw[-·]?h", re.IGNORECASE
+        ),
+        "strong":  50.0,   # < 50 g/kWh → strong
+        "partial": 100.0,  # < 100 g/kWh → partial
+        "units":   "g/kWh",
+        "inverted": True,   # lower = better (emissions)
+    },
+    "ghg_reduction_pct": {
+        # % GHG/CO₂ reduction — must be ≥ 15
+        "pattern": re.compile(
+            r"(\d{1,3}(?:[.,]\d+)?)\s*%\s*(?:"
+            r"co2\s*(?:reduction|kamay|снижени)|"
+            r"ghg\s*reduction|"
+            r"emission\s*reduction|"
+            r"greenhouse\s*gas\s*reduction|"
+            r"issiqxona\s*gaz\s*kamay|"
+            r"снижени[ея]\s*(?:выброс|парников)"
+            r")", re.IGNORECASE
+        ),
+        "strong":  30.0,
+        "partial": 15.0,
+        "units":   "%",
+        "inverted": False,
+    },
+}
+
+
+def _extract_numeric_signals(text: str, criterion: str) -> float:
+    """
+    For relevant criteria, parse numeric values from text and return
+    an evidence score (0.0 | 0.6 | 1.0) based on threshold rules.
+
+    Called as an ADDITIONAL input to reinforce or upgrade semantic score.
+    """
+    rules_for = []
+    if criterion == "energy_efficiency":
+        rules_for = [_NUMERIC_RULES["energy_efficiency"]]
+    elif criterion == "ghg_reduction":
+        rules_for = [_NUMERIC_RULES["ghg_reduction"], _NUMERIC_RULES["ghg_reduction_pct"]]
+    else:
+        return 0.0
+
+    best = 0.0
+    for rule in rules_for:
+        for m in rule["pattern"].finditer(text):
+            raw_val = m.group(1).replace(",", ".")
+            try:
+                val = float(raw_val)
+            except ValueError:
+                continue
+            inverted = rule["inverted"]
+            if not inverted:
+                if val >= rule["strong"]:
+                    best = max(best, 1.0)
+                elif val >= rule["partial"]:
+                    best = max(best, 0.6)
+            else:
+                if val < rule["strong"]:
+                    best = max(best, 1.0)
+                elif val < rule["partial"]:
+                    best = max(best, 0.6)
+    return best
+
+
+# 3 ── Source reliability
+# Phrases that indicate the evidence is authoritative vs. marketing.
+_SOURCE_STRONG: list[str] = [
+    "leed", "edge certified", "breeam", "iso 14001",
+    "davlat ekologik ekspertiza", "state environmental",
+    "government report", "technical specification", "audit report",
+    "engineering assessment", "feasibility study", "project passport",
+]
+_SOURCE_MEDIUM: list[str] = [
+    "technical report", "measurement data", "test result",
+    "monitoring report", "assessment", "technical design",
+    "documented", "project design", "тех\u043d\u0438\u0447\u0435\u0441\u043a\u043e\u0435",
+]
+_SOURCE_WEAK: list[str] = [
+    "eco-friendly", "environment-friendly", "sustainable approach",
+    "green initiative", "green values", "green culture",
+    "ecological harmony", "environmental responsibility statement",
+    "commitment to", "supports sustainable",
+]
+
+
+def _source_reliability_score(evidence_text: str) -> float:
+    """
+    Return a reliability multiplier (0.3 – 1.0) based on evidence provenance.
+
+    1.0  → official certification or state-endorsed document
+    0.8  → technical/engineering data
+    0.6  → assessment or documented report
+    0.3  → marketing / soft claim
+    """
+    t = evidence_text.lower()
+    if any(s in t for s in _SOURCE_STRONG):
+        return 1.0
+    if any(s in t for s in _SOURCE_MEDIUM):
+        return 0.8
+    if any(s in t for s in _SOURCE_WEAK):
+        return 0.3
+    return 0.6  # neutral default
+
+
+# 4 ── Time-status detection
+_PLANNED_PATTERNS = re.compile(
+    r"\b(?:"
+    r"will\s+(?:be\s+)?(?:install|build|implement|establish|construct)|"
+    r"plan(?:ned|s)?\s+to|"
+    r"planned|planning\s+stage|"
+    r"pre-?construction|preconstruction|"
+    r"proposed\s+to|"
+    r"intend(?:s)?\s+to|"
+    r"intended\s+to|"
+    r"to\s+be\s+(?:installed|implemented|constructed|commissioned)|"
+    r"will\s+be\s+commissioned|"
+    r"upon\s+completion|once\s+operational|"
+    r"being\s+considered|under\s+consideration|"
+    r"future\s+(?:install|project|phase)|"
+    r"by\s+20\d{2}|"
+    r"qur(?:iladi|ilmoqda)|"
+    r"o['']rnatiladi|"
+    r"rejalashtirilmoqda|"
+    r"kelajakda|"
+    r"предусмотрен\s+(?:установк|строительств|монтаж)|"
+    r"планируется|"
+    r"будет\s+(?:установлен|смонтирован|построен)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_OPERATIONAL_PATTERNS = re.compile(
+    r"\b(?:"
+    r"(?:already\s+)?(?:installed|functioning|running|in\s+use|operating)|"
+    r"(?:has|have|was|were)\s+been\s+(?:installed|implemented|commissioned)|"
+    r"(?:is|are)\s+operational|"
+    r"o['']rnatilgan|"
+    r"ishlamoqda|"
+    r"joriy\s+etilgan|"
+    r"установлен[оа]?\b|"
+    r"введён\s+в\s+эксплуатацию|"
+    r"функционирует|"
+    r"工作中"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_time_status(evidence_snippet: str) -> float:
+    """
+    Returns a time-status multiplier for evidence scoring:
+
+    1.0  — operational / installed and running
+    0.6  — under construction / being implemented
+    0.4  — planned / future
+    0.7  — default (ambiguous tense)
+    """
+    t = evidence_snippet
+    is_operational = bool(_OPERATIONAL_PATTERNS.search(t))
+    is_planned     = bool(_PLANNED_PATTERNS.search(t))
+
+    if is_operational and not is_planned:
+        return 1.0
+    if is_planned and not is_operational:
+        return 0.4
+    if is_operational and is_planned:
+        return 0.6   # mixed: partially deployed
+    return 0.7       # ambiguous — apply slight discount
+
+
+def _get_evidence_context(full_text: str, evidence_snippet: str, window: int = 160) -> str:
+    """Return surrounding text for an extracted evidence snippet when available."""
+    haystack = " ".join((full_text or "").lower().split())
+    needle = " ".join((evidence_snippet or "").lower().split())
+    if not haystack or not needle:
+        return needle or haystack
+
+    start = haystack.find(needle)
+    if start == -1:
+        probe = " ".join(needle.split()[:6])
+        if not probe:
+            return needle
+        start = haystack.find(probe)
+        if start == -1:
+            return needle
+        end = start + max(len(needle), len(probe))
+    else:
+        end = start + len(needle)
+
+    return haystack[max(0, start - window):min(len(haystack), end + window)]
+
+
+# 5 ── Multilingual OCR normalization
+# Cyrillic → Latin lookalike table (partial, for common OCR confusions)
+_CYRILLIC_TO_LATIN: dict[str, str] = {
+    "а": "a", "е": "e", "о": "o", "р": "r", "с": "c",
+    "х": "x", "у": "y", "А": "A", "В": "B", "С": "C",
+    "Е": "E", "М": "M", "Н": "H", "О": "O", "Р": "P",
+    "Т": "T", "Х": "X",
+}
+_BROKEN_SPACE_RE  = re.compile(r"(?<=\w)-\s*\n\s*(?=\w)")   # hyphenated line break
+_MULTI_SPACE_RE   = re.compile(r"[ \t]{2,}")
+_OCR_ARTIFACT_RE  = re.compile(r"[|}{@#~^]")                 # common OCR garbage chars
+
+
+def normalize_text(text: str) -> str:
+    """
+    Multilingual OCR hardening:
+    1. Rejoin hyphen-broken words ("so-\n  lar" → "solar")
+    2. Collapse multiple spaces / tabs
+    3. Strip common OCR artifact characters
+    4. Normalize Unicode (NFC)
+
+    Does NOT transliterate Cyrillic — keeps original script for phrase matching.
+    """
+    import unicodedata
+    t = _BROKEN_SPACE_RE.sub("", text)
+    t = _MULTI_SPACE_RE.sub(" ", t)
+    t = _OCR_ARTIFACT_RE.sub(" ", t)
+    t = unicodedata.normalize("NFC", t)
+    return t
+
+
+# 6 ── Cross-criteria dependency rules
+def _apply_cross_rules(
+    criteria_scores: dict,
+    stop_scores:     dict,
+    notes:           list,
+) -> dict:
+    """
+    Post-processing consistency rules.  Adjusts scores where criteria
+    are logically dependent on each other.
+
+    Rules applied:
+    R1: renewable_energy strong + ghg_reduction absent → suspicious flag (−0.1)
+    R2: energy_efficiency present but only weak numeric evidence → cap at 0.6
+    R3: certificate present + no other criterion confirmed → cap cert at 0.6
+         (cert alone, without supporting operational evidence, is insufficient)
+    R4: any hard stop triggered → zero-out all green criteria scores
+         (handled upstream; kept here as safety net)
+    """
+    s = {k: v for k, v in criteria_scores.items()}  # shallow copy
+
+    r_score = s.get("renewable_energy", 0.0)
+    g_score = s.get("ghg_reduction", 0.0)
+    e_score = s.get("energy_efficiency", 0.0)
+    c_score = s.get("certificate", 0.0)
+
+    confirmed = {k for k, v in s.items() if v >= 0.5}
+    stop_triggered = any(
+        (v.get("value", 0.0) if isinstance(v, dict) else v) >= 0.5
+        for v in stop_scores.values()
+    )
+
+    # R4 safety net
+    if stop_triggered:
+        for k in s:
+            s[k] = 0.0
+        return s
+
+    # R1: renewable-only narratives without emissions evidence are suspicious,
+    # but do not penalize projects already supported by multiple other criteria.
+    other_confirmed = confirmed - {"renewable_energy", "certificate"}
+    if r_score >= 1.0 and g_score == 0.0 and not other_confirmed:
+        s["renewable_energy"] = min(r_score, 0.9)
+        notes.append(
+            "Cross-criteria: renewable_energy confirmed but no GHG reduction "
+            "evidence — renewable score slightly discounted (0.9)."
+        )
+
+    # R2: energy_efficiency weak — cap at 0.6 if only weak-level semantic found
+    if 0.0 < e_score < 0.5:
+        # Already weak; no further action needed
+        pass
+
+    # R3: certificate alone (no other confirmed criterion) → cap at 0.6
+    if c_score >= 0.5 and not (confirmed - {"certificate"}):
+        s["certificate"] = min(c_score, 0.6)
+        notes.append(
+            "Cross-criteria: certificate present but no other ESG criterion "
+            "confirmed — certificate score capped at 0.6."
+        )
+
+    return s
+
+
 def _semantic_strength(name: str, text_lower: str, concept_map: dict) -> float:
     """
     Return evidence strength (0.0 | 0.3 | 0.6 | 1.0) via tiered semantic matching.
     Checks concept tiers strong → partial → weak.
     Each tier is a list of synonym groups; any single phrase hit within a group
     counts as a match for that tier.  Highest tier wins.
+
+    Negation guard: if the matched phrase is surrounded by negation words
+    within a 120-char window, the tier is skipped entirely.
     """
     entry = concept_map.get(name, {})
-    for phrase_group in entry.get("strong", []):
-        if any(phrase in text_lower for phrase in phrase_group):
-            return 1.0
-    for phrase_group in entry.get("partial", []):
-        if any(phrase in text_lower for phrase in phrase_group):
-            return 0.6
-    for phrase_group in entry.get("weak", []):
-        if any(phrase in text_lower for phrase in phrase_group):
-            return 0.3
+    for tier_name, score in (("strong", 1.0), ("partial", 0.6), ("weak", 0.3)):
+        for phrase_group in entry.get(tier_name, []):
+            for phrase in phrase_group:
+                pos = text_lower.find(phrase)
+                if pos == -1:
+                    continue
+                # Negation guard
+                if _has_negation_nearby(text_lower, pos, pos + len(phrase)):
+                    continue
+                return score
     return 0.0
 
 
@@ -888,30 +1232,93 @@ def _compute_dynamic_threshold(criteria: dict, stops: dict) -> float:
     return 3.0       # standard
 
 
-def _compute_calibrated_score(criteria: dict, stops: dict) -> tuple:
+def _compute_calibrated_score(
+    criteria: dict,
+    stops:    dict,
+    full_text: str = "",
+    notes:     list | None = None,
+) -> tuple:
     """
-    Calibrated scoring with penalties for weak-only evidence and soft contradictions.
+    Calibrated scoring with numeric intelligence, source reliability,
+    time-status discounting, cross-criteria rules, and contradiction penalties.
 
-    ambiguity_penalty    — when ALL signals are weak (< 0.5), each adds 0.2 penalty
-    contradiction_penalty — soft stop signals (0.3–0.49) indicate unresolved industry risk
+    Inputs
+    ------
+    criteria  : {name: {"value": float, "evidence": str}, ...}
+    stops     : {name: {"value": float, "evidence": str}, ...}
+    full_text : raw document text (for numeric + context checks)
+    notes     : accumulated audit notes list (mutated in-place)
 
-    Score clamped to [0, 5]. Returns (final_score: float, breakdown: dict).
+    Returns (final_score: float, breakdown: dict)
+    Score clamped to [0, 5].
     """
-    raw = sum(v.get("value", 0.0) for v in criteria.values() if isinstance(v, dict))
+    if notes is None:
+        notes = []
+    t_lower = (" ".join(full_text.lower().split())) if full_text else ""
 
-    confirmed = sum(
-        1 for v in criteria.values()
-        if isinstance(v, dict) and v.get("value", 0) >= 0.5
-    )
-    weak = sum(
-        1 for v in criteria.values()
-        if isinstance(v, dict) and 0.0 < v.get("value", 0) < 0.5
-    )
+    # Step 1 — collect base semantic scores and upgrade with numeric evidence
+    base_scores: dict[str, float] = {}
+    for name, obj in criteria.items():
+        if not isinstance(obj, dict):
+            base_scores[name] = 0.0
+            continue
+        sem_score = obj.get("value", 0.0)
 
-    # Ambiguity penalty: only weak signals present, no confirmed evidence
+        # Numeric intelligence: can raise (but not lower) semantic score
+        if t_lower:
+            num_score = _extract_numeric_signals(t_lower, name)
+            if num_score > sem_score:
+                notes.append(
+                    f"Numeric evidence for '{name}' raised score "
+                    f"{sem_score:.1f} → {num_score:.1f}."
+                )
+                sem_score = num_score
+
+        # Time-status discount: planned claims get 0.4× multiplier
+        evidence = obj.get("evidence", "")
+        evidence_context = _get_evidence_context(t_lower, evidence)
+        if sem_score > 0 and evidence:
+            time_mult = _detect_time_status(evidence_context or evidence)
+            if time_mult < 0.7:
+                discounted = round(sem_score * time_mult, 2)
+                notes.append(
+                    f"Time-status: '{name}' evidence appears planned/future "
+                    f"→ score discounted {sem_score:.1f} × {time_mult:.1f} = {discounted:.2f}."
+                )
+                sem_score = discounted
+
+        # Source reliability: marketing text gets 0.3× multiplier
+        if sem_score > 0 and evidence:
+            rel = _source_reliability_score(evidence)
+            if rel < 0.6:
+                discounted = round(sem_score * rel, 2)
+                notes.append(
+                    f"Source reliability: '{name}' evidence appears to be marketing "
+                    f"language → score discounted {sem_score:.1f} × {rel:.1f} = {discounted:.2f}."
+                )
+                sem_score = discounted
+
+        base_scores[name] = sem_score
+
+    # Step 2 — cross-criteria logic
+    base_scores = _apply_cross_rules(base_scores, stops, notes)
+
+    # Rebuild adjusted criteria dict for downstream use
+    adjusted_criteria = {
+        k: {"value": base_scores.get(k, v.get("value", 0.0) if isinstance(v, dict) else 0.0),
+            "evidence": v.get("evidence", "") if isinstance(v, dict) else ""}
+        for k, v in criteria.items()
+    }
+
+    raw = sum(base_scores.values())
+
+    confirmed = sum(1 for v in base_scores.values() if v >= 0.5)
+    weak      = sum(1 for v in base_scores.values() if 0.0 < v < 0.5)
+
+    # Ambiguity penalty: only weak signals with no confirmed evidence
     ambiguity_penalty = 0.2 * weak if confirmed == 0 else 0.0
 
-    # Contradiction penalty: soft stop signals present (concerning but not blocking)
+    # Contradiction penalty: soft stop signals (concerning but not blocking)
     soft_stop_sum = sum(
         v.get("value", 0.0) for v in stops.values()
         if isinstance(v, dict) and 0.3 <= v.get("value", 0) < 0.5
@@ -924,6 +1331,7 @@ def _compute_calibrated_score(criteria: dict, stops: dict) -> tuple:
         "ambiguity_penalty":     round(ambiguity_penalty, 3),
         "contradiction_penalty": round(contradiction_penalty, 3),
         "final":                 round(final, 3),
+        "adjusted_criteria":     adjusted_criteria,
     }
 
 
@@ -1145,6 +1553,122 @@ def _build_decision_explanation(
         "environmental impact evidence. "
     )
     return base + " ".join(parts) + " " + score_sentence
+
+
+def _build_missing_criteria_explanation(
+    criteria: dict,
+    stops: dict,
+    score: float,
+    threshold: float,
+) -> dict:
+    """
+    Audit 2.0: returns a structured 'what is missing to become GREEN' breakdown.
+
+    Returns:
+    {
+      "gap": float,                  — how much score is needed to reach threshold
+      "missing_criteria": [...],     — list of unmet criteria with action guidance
+      "is_fixable": bool,            — can this project reach GREEN by adding evidence?
+      "summary": str,                — one-sentence human verdict
+    }
+    """
+    _CRITERION_GUIDANCE: dict[str, str] = {
+        "renewable_energy": (
+            "Provide documentation of installed renewable energy systems "
+            "(solar panels, wind turbines, hydropower). Include technical specifications "
+            "and capacity data."
+        ),
+        "energy_efficiency": (
+            "Document energy efficiency improvements of at least 20%. "
+            "Include baseline and projected/achieved energy consumption figures, "
+            "or reference a recognised efficiency standard (e.g. ISO 50001)."
+        ),
+        "ghg_reduction": (
+            "Provide quantified greenhouse gas or CO₂ reduction targets or results. "
+            "Include baseline emissions, reduction percentage, and methodology."
+        ),
+        "environmental_infrastructure": (
+            "Document environmental control systems such as wastewater treatment, "
+            "dust-gas filtration, or industrial recycling. Include technical drawings "
+            "or commissioning certificates."
+        ),
+        "certificate": (
+            "Obtain (or document existing) environmental certification: "
+            "LEED, EDGE, BREEAM, ISO 14001, or equivalent state environmental "
+            "approval. Generic quality certificates (ISO 9001) do not qualify."
+        ),
+    }
+
+    stop_triggered = any(
+        v.get("value", 0) >= 0.5 for v in stops.values() if isinstance(v, dict)
+    )
+    if stop_triggered:
+        return {
+            "gap": 0.0,
+            "missing_criteria": [],
+            "is_fixable": False,
+            "summary": (
+                "This project cannot qualify as GREEN due to exclusion triggers. "
+                "Changing the primary business activity would be required."
+            ),
+        }
+
+    gap = max(0.0, round(threshold - score, 2))
+    confirmed_score = sum(
+        v.get("value", 0.0) for v in criteria.values()
+        if isinstance(v, dict) and v.get("value", 0) >= 0.5
+    )
+    missing_potential = sum(
+        1.0 - (v.get("value", 0.0) if isinstance(v, dict) else 0.0)
+        for v in criteria.values()
+        if isinstance(v, dict) and v.get("value", 0) < 0.5
+    )
+
+    missing_list = []
+    for name, obj in criteria.items():
+        val = obj.get("value", 0.0) if isinstance(obj, dict) else 0.0
+        if val < 0.5:
+            label    = _CRITERION_DISPLAY.get(name, name.replace("_", " ").title())
+            guidance = _CRITERION_GUIDANCE.get(name, "Provide verifiable documentation.")
+            missing_list.append({
+                "criterion": name,
+                "label":     label,
+                "current_score": round(val, 2),
+                "needed": round(1.0 - val, 2),
+                "guidance": guidance,
+            })
+
+    # Sort by highest potential contribution first
+    missing_list.sort(key=lambda x: -x["needed"])
+
+    is_fixable = (confirmed_score + missing_potential) >= threshold
+
+    if gap == 0.0:
+        summary = "This project meets the required threshold. No additional criteria needed."
+    elif is_fixable:
+        n_needed = sum(
+            1 for m in missing_list
+            if confirmed_score + m["needed"] + (threshold - score) <= 1.0 + 1e-9
+        )
+        criteria_needed = missing_list[:max(1, len(missing_list))]
+        names_needed = ", ".join(m["label"] for m in criteria_needed[:3])
+        summary = (
+            f"This project is {gap:.2f} points below the required threshold ({threshold:.1f}). "
+            f"To qualify as GREEN, the following must be documented: {names_needed}."
+        )
+    else:
+        summary = (
+            f"This project is {gap:.2f} points below the required threshold ({threshold:.1f}). "
+            "The available evidence is insufficient to reach GREEN classification "
+            "without fundamentally changing the project scope."
+        )
+
+    return {
+        "gap":              gap,
+        "missing_criteria": missing_list,
+        "is_fixable":       is_fixable,
+        "summary":          summary,
+    }
 
 
 def _build_risk_explanation(risk_factors: list) -> str:
@@ -1436,11 +1960,14 @@ def analyze_esg_holistic(text: str) -> dict:
                 # Calibrated scoring + risk profiling (new fields)
                 vfc = vf["green_criteria"]
                 vfs = vf["stop_factors"]
-                calibrated, breakdown = _compute_calibrated_score(vfc, vfs)
+                calibrated, breakdown = _compute_calibrated_score(vfc, vfs, text, notes)
                 amb        = _compute_ambiguity_level(vfc, vfs, rejected)
                 conf       = _compute_confidence(vf, rejected)
                 thresh     = _compute_dynamic_threshold(vfc, vfs)
                 risk_facts = _compute_risk_factors(vfc, vfs, rejected)
+
+                # Use adjusted criteria from breakdown if cross-rules modified them
+                adj_crit = breakdown.get("adjusted_criteria", vfc)
 
                 result["calibrated_score"]  = calibrated
                 result["penalty_breakdown"] = breakdown
@@ -1449,13 +1976,16 @@ def analyze_esg_holistic(text: str) -> dict:
                 result["risk_factors"]      = risk_facts
                 result["semantic_signals"]  = {
                     k: v.get("value", 0.0)
-                    for k, v in vfc.items() if isinstance(v, dict)
+                    for k, v in adj_crit.items() if isinstance(v, dict)
                 }
                 # Explainability fields (decision-independent — built here)
-                result["criterion_breakdown"]     = _build_score_breakdown(vfc)
+                result["criterion_breakdown"]     = _build_score_breakdown(adj_crit)
                 result["ambiguity_explanation"]   = _build_ambiguity_explanation(amb, rejected)
                 result["confidence_explanation"]  = _build_confidence_explanation(conf, amb, rejected)
                 result["risk_explanation"]        = _build_risk_explanation(risk_facts)
+                result["missing_criteria"]        = _build_missing_criteria_explanation(
+                    adj_crit, vfs, calibrated, thresh
+                )
 
                 n_conf = sum(
                     1 for v in vf["green_criteria"].values()
