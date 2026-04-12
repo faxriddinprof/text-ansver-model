@@ -361,3 +361,193 @@ def extract_data(text: str, mode: str = "balanced") -> dict:
 
     print(f"[extractor] Final data after validation: {data}")
     return data
+
+
+# ---------------------------------------------------------------------------
+# ESG Holistic Analyst — SENIOR mode (primary TXT pipeline)
+# ---------------------------------------------------------------------------
+
+# Only the first N characters are sent to the LLM.
+# Project purpose is always in the opening paragraphs; tails are legal
+# boilerplate, governance text, and collateral lists that pollute the context.
+ESG_ANALYST_MAX_CHARS = 6_000
+
+ESG_ANALYST_PROMPT = """CRITICAL: Your ENTIRE response must be a single valid JSON object.
+Do NOT write any explanation, summary, or text outside the JSON.
+Start immediately with { and end with }.
+
+You are a SENIOR ESG ANALYST working at a development bank.
+
+Your task is to analyze a raw document (TXT, possibly noisy OCR) and determine
+whether the project is a GREEN PROJECT or NOT GREEN.
+
+This is NOT a simple keyword task. You must behave like a human ESG expert and
+produce a justified, evidence-based conclusion.
+
+---
+
+### STEP 1 — IDENTIFY PROJECT CORE
+
+Understand:
+- What is the project?
+- What is the loan used for?
+- What industry does it belong to?
+
+IGNORE: legal statutes, governance text, collateral descriptions, boilerplate.
+FOCUS ONLY on: project purpose, investment description, technical implementation.
+
+---
+
+### STEP 2 — CHECK STOP FACTORS (STRICT)
+
+Mark TRUE only if it is the MAIN activity of the project:
+- coal-related activity
+- oil & gas extraction
+- alcohol production or trade
+- tobacco production or trade
+- gambling, weapons, radioactive materials
+
+If just mentioned somewhere → IGNORE.
+
+---
+
+### STEP 3 — CHECK GREEN CRITERIA (STRICT & EVIDENCE-BASED)
+
+Evaluate ONLY if clearly and explicitly stated:
+
+1. renewable_energy: solar / wind / hydro / geothermal
+2. energy_efficiency: ≥20% improvement OR clearly stated
+3. ghg_reduction: explicit CO2 / GHG reduction statement
+4. environmental_infrastructure: water supply improvement, recycling systems,
+   or pollution control — REAL industrial usage only
+5. certificate: EDGE / LEED / BREEAM or official equivalent
+
+RULES:
+- If unclear → FALSE
+- If generic mention → FALSE
+- If not directly part of project purpose → FALSE
+
+For each criterion, provide a short evidence quote or explanation.
+
+---
+
+### STEP 4 — FINAL DECISION
+
+IF any stop factor = TRUE:
+    → NOT GREEN
+
+ELSE:
+    count criteria where value = true
+    IF count >= 3: → GREEN
+    ELSE: → NOT GREEN
+
+---
+
+### STEP 5 — OUTPUT (STRICT JSON ONLY)
+
+{
+  "project_summary": {
+    "what_is_project": "...",
+    "loan_purpose": "...",
+    "industry": "..."
+  },
+  "stop_factors": {
+    "triggered": false,
+    "details": []
+  },
+  "green_criteria": {
+    "renewable_energy": {
+      "value": false,
+      "evidence": ""
+    },
+    "energy_efficiency": {
+      "value": false,
+      "evidence": ""
+    },
+    "ghg_reduction": {
+      "value": false,
+      "evidence": ""
+    },
+    "environmental_infrastructure": {
+      "value": false,
+      "evidence": ""
+    },
+    "certificate": {
+      "value": false,
+      "evidence": ""
+    }
+  },
+  "final_decision": "GREEN or NOT GREEN",
+  "confidence": 0,
+  "reasoning": "..."
+}
+
+---
+
+CRITICAL RULES:
+- Be conservative. If evidence is weak → FALSE.
+- Do NOT rely on keywords alone.
+- Do NOT guess or hallucinate.
+- Base every decision ONLY on clear evidence from the text.
+- Output ONLY the JSON. No text before {. No text after }.
+
+---
+
+Now analyze this document:
+
+{{TEXT}}
+"""
+
+
+def _parse_esg_response(raw: str) -> dict:
+    """Extract the outermost JSON object from a holistic ESG analyst response."""
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group())
+    except json.JSONDecodeError:
+        return {}
+
+
+def analyze_esg_holistic(text: str) -> dict:
+    """
+    Send the first ESG_ANALYST_MAX_CHARS characters to the LLM for a holistic,
+    context-aware ESG analysis.  Returns the parsed JSON dict, or {} on failure.
+
+    Only the opening of the document is used because:
+    - Project purpose is always described first
+    - Tails contain legal boilerplate / bylaws that confuse the model
+    """
+    body   = text[:ESG_ANALYST_MAX_CHARS]
+    prompt = ESG_ANALYST_PROMPT.replace("{{TEXT}}", body)
+
+    for attempt in range(1, 3):
+        try:
+            raw    = call_llm(prompt)
+            parsed = _parse_esg_response(raw)
+
+            # Validate: must have green_criteria with the expected nested structure
+            criteria = parsed.get("green_criteria", {})
+            if parsed and criteria and any(
+                isinstance(v, dict) and "value" in v for v in criteria.values()
+            ):
+                score = sum(
+                    1 for v in criteria.values()
+                    if isinstance(v, dict) and v.get("value") is True
+                )
+                print(
+                    f"[extractor] ESG analyst (attempt {attempt}): "
+                    f"decision={parsed.get('final_decision')}, "
+                    f"score={score}/5, confidence={parsed.get('confidence')}"
+                )
+                return parsed
+
+            print(f"[extractor] Attempt {attempt}: invalid response structure — retrying...")
+            prompt += "\n\nREMINDER: Output ONLY the JSON object. No text before or after."
+
+        except Exception as e:
+            print(f"[extractor] ESG analyst attempt {attempt} error: {e}")
+
+    print("[extractor] ESG holistic analysis failed — will fall back to rule engine")
+    return {}

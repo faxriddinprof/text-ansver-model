@@ -21,8 +21,8 @@
   },
   {
     "file": "checks/big_test.txt",
-    "expected": "NOT GREEN",
-    "note": "Solar + wind, 120MW hydro but CO2 data missing — DR04 skipped in balanced mode, but score still < 3 without filter/water rules"
+    "expected": "GREEN",
+    "note": "Solar+wind station, LEED cert, 30% energy efficiency, CO2 85g/kWh reduction, water management — 5 green criteria clearly met"
   },
   {
     "file": "checks/dependent.txt",

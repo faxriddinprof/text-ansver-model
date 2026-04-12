@@ -39,7 +39,12 @@ if QUIET:
     sys.stdout = io.StringIO()
 
 from src.utils.parser import read_txt
-from src.utils.extractor import extract_data, _extract_with_keywords
+from src.utils.extractor import (
+    extract_data,
+    _extract_with_keywords,
+    _ollama_available,
+    analyze_esg_holistic,
+)
 from src.utils.engine import evaluate, evaluate_from_esg_json
 
 if QUIET:
@@ -73,14 +78,70 @@ if SINGLE_FILE:
 # ---------------------------------------------------------------------------
 
 def run_txt_pipeline(file_path: str) -> dict:
-    """TXT pipeline: extract → evaluate (rule engine)."""
+    """TXT pipeline: holistic ESG analyst (primary) → rule engine (fallback)."""
     text = read_txt(file_path)
+
+    # ── PRIMARY: context-aware holistic analysis ──────────────────────────
+    if _ollama_available():
+        esg = analyze_esg_holistic(text)
+        criteria = esg.get("green_criteria", {})
+
+        # Validate that we got the expected nested structure
+        if esg and criteria and any(
+            isinstance(v, dict) and "value" in v for v in criteria.values()
+        ):
+            stop  = esg.get("stop_factors", {})
+            score = sum(
+                1 for v in criteria.values()
+                if isinstance(v, dict) and v.get("value") is True
+            )
+
+            # Python enforces the decision — never trust LLM's final_decision
+            if stop.get("triggered", False):
+                final_status = "NOT GREEN"
+            elif score >= 3:
+                final_status = "GREEN"
+            else:
+                final_status = "NOT GREEN"
+
+            # Build evidence-annotated passed / failed lists
+            passed = [
+                f"{k}: {v.get('evidence', '')[:100]}"
+                for k, v in criteria.items()
+                if isinstance(v, dict) and v.get("value") is True
+            ]
+            failed = [
+                f"{k}: {v.get('evidence', '')[:100]}"
+                for k, v in criteria.items()
+                if isinstance(v, dict) and v.get("value") is False
+            ]
+
+            return {
+                "status":     final_status,
+                "score":      score,
+                "pipeline":   "txt_esg",
+                "confidence": esg.get("confidence", 0) / 100,
+                "reason":     esg.get("reasoning", ""),
+                "decision_reasons": {
+                    "project_summary":           esg.get("project_summary", {}),
+                    "stop_factors":              stop,
+                    "green_criteria":            criteria,
+                    "passed_rules":              passed,
+                    "failed_rules":              failed,
+                    "exclusions_triggered":      stop.get("details", []),
+                    "dependent_rules_triggered": [],
+                },
+            }
+
+    # ── FALLBACK: keyword extraction + rule engine ────────────────────────
+    print(f"  [info] Holistic unavailable — rule engine fallback (mode={MODE})")
     if len(text) > LLM_CHAR_LIMIT:
-        print(f"  [info] Large file ({len(text):,} chars) — keyword fallback, mode={MODE}")
-        data = _extract_with_keywords(text, mode=MODE)
+        # Large docs: always strict to avoid keyword false positives
+        data   = _extract_with_keywords(text, mode="strict")
+        result = evaluate(data, rules_json, mode="strict")
     else:
-        data = extract_data(text, mode=MODE)
-    result = evaluate(data, rules_json, mode=MODE)
+        data   = extract_data(text, mode=MODE)
+        result = evaluate(data, rules_json, mode=MODE)
     result["pipeline"] = "txt"
     return result
 
