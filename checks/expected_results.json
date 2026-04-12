@@ -38,5 +38,10 @@
     "file": "checks/real/fazo_group_esg.json",
     "expected": "NOT GREEN",
     "note": "Structured ESG JSON report — FAZO GROUP trikotaj, no green criteria met, JSON pipeline"
+  },
+  {
+    "file": "checks/real/context.json",
+    "expected": "GREEN",
+    "note": "Real expert-approved green project: FAZO GROUP trikotaj — Davlat Ekologik Ekspertiza certificate + tashkil qilingan manba (organized emission sources) + quyosh energiya (105 solar panels)"
   }
 ]

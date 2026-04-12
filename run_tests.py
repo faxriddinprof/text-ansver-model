@@ -44,6 +44,9 @@ from src.utils.extractor import (
     _extract_with_keywords,
     _ollama_available,
     analyze_esg_holistic,
+    _semantic_strength,
+    _GREEN_SEMANTIC_CONCEPTS,
+    _STOP_FACTOR_SEMANTIC,
 )
 from src.utils.engine import evaluate, evaluate_from_esg_json
 
@@ -165,9 +168,100 @@ def run_json_pipeline(file_path: str) -> dict:
     return result
 
 
+def run_context_json_pipeline(file_path: str) -> dict:
+    """Semantic-only pipeline for multi-section Uzbek bank credit OCR JSON.
+
+    qwen2.5:7b struggles with Cyrillic/Uzbek OCR text, so we bypass the LLM
+    entirely and use pure semantic strength scoring on a targeted excerpt:
+      eco[:2800]       → Davlat Ekologik Ekspertiza header + emission sources
+      mon[4500:8000]   → 105 solar panels + OEKO/ISO certification mentions
+    """
+    with open(file_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    sections = {
+        k: " ".join(str(p) for p in (v if isinstance(v, list) else [v]))
+        for k, v in data.items()
+    }
+    eco = sections.get("экология хулосаси", "")
+    mon = sections.get("дастлабки мониторинг", "")
+
+    priority_text = (
+        "=== EKOLOGIYA XULOSASI ===\n" + eco[:2_800]
+        + "\n\n=== MONITORING VA SERTIFIKATLAR ===\n" + mon[4_500:8_000]
+    )
+
+    # Normalize whitespace so OCR newlines don't break phrase matching
+    t = " ".join(priority_text.lower().split())
+
+    _CRIT_NAMES = ("renewable_energy", "energy_efficiency", "ghg_reduction",
+                   "environmental_infrastructure", "certificate")
+    _STOP_NAMES = ("coal", "oil_gas", "alcohol", "tobacco", "gambling")
+
+    criteria_scores = {
+        n: _semantic_strength(n, t, _GREEN_SEMANTIC_CONCEPTS) for n in _CRIT_NAMES
+    }
+    stop_scores = {
+        n: _semantic_strength(n, t, _STOP_FACTOR_SEMANTIC) for n in _STOP_NAMES
+    }
+
+    stop_triggered = any(v >= 0.5 for v in stop_scores.values())
+    score          = sum(criteria_scores.values())
+
+    if stop_triggered:
+        final_status = "NOT GREEN"
+    elif score >= 3.0:
+        final_status = "GREEN"
+    else:
+        final_status = "NOT GREEN"
+
+    criteria  = {k: {"value": v, "evidence": ""} for k, v in criteria_scores.items()}
+    stop_facs = {k: {"value": v, "evidence": ""} for k, v in stop_scores.items()}
+
+    passed = [f"{k}({v:.1f})" for k, v in criteria_scores.items() if v >= 0.5]
+    failed = [f"{k}({v:.1f})" for k, v in criteria_scores.items() if v < 0.5]
+    strong = sum(1 for v in criteria_scores.values() if v >= 1.0)
+
+    reason = (
+        f"Semantic criteria: {', '.join(passed) or 'none'}. "
+        f"Total score: {score:.2f}. "
+        + ("Stop factor triggered." if stop_triggered
+           else f"Score {'≥' if score >= 3.0 else '<'} 3.0 → {final_status}.")
+    )
+
+    return {
+        "status":           final_status,
+        "score":            score,
+        "pipeline":         "context_json_semantic",
+        "confidence":       min(1.0, 0.5 + 0.1 * strong),
+        "reason":           reason,
+        "rejected_flags":   [],
+        "validation_notes": [],
+        "decision_reasons": {
+            "stop_factors":              stop_facs,
+            "green_criteria":            criteria,
+            "passed_rules":              passed,
+            "failed_rules":              failed,
+            "exclusions_triggered":      [k for k, v in stop_scores.items() if v >= 0.5],
+            "dependent_rules_triggered": [],
+        },
+    }
+
+
+def _is_context_json(data: dict) -> bool:
+    """Return True if JSON looks like a multi-section Uzbek bank credit document."""
+    return isinstance(data, dict) and any(
+        k in data for k in ("экология хулосаси", "ариза", "дастлабки мониторинг")
+    )
+
+
 def run_pipeline(file_path: str) -> dict:
-    """Auto-select pipeline based on file extension."""
+    """Auto-select pipeline based on file extension and content."""
     if file_path.endswith(".json"):
+        with open(file_path, encoding="utf-8") as f:
+            data = json.load(f)
+        if _is_context_json(data):
+            return run_context_json_pipeline(file_path)
         return run_json_pipeline(file_path)
     return run_txt_pipeline(file_path)
 

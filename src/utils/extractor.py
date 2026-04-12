@@ -573,14 +573,18 @@ def _criterion_confirmed(crit_name: str, text_lower: str) -> bool:
 _GREEN_SEMANTIC_CONCEPTS: dict[str, dict[str, list[list[str]]]] = {
     "renewable_energy": {
         "strong": [
-            ["quyosh panellari", "quyosh paneli", "solar panel", "photovoltaic"],
+            ["quyosh panellari", "quyosh paneli", "solar panel", "photovoltaic",
+             "қуёш панеллари", "қуёш панели"],
+            ["қуёш панеллари", "қуёш панели", "солнечные панели", "солнечная панель"],
             ["shamol turbina", "wind turbine", "ветрогенератор", "ветроустановка"],
             ["gidroelektrostantsiya", "hydroelectric station", "гидроэлектростанция", "гэс"],
             ["geothermal", "геотермальн"],
             ["solar farm", "solar park", "wind farm", "wind power plant"],
         ],
         "partial": [
-            ["quyosh energiya", "solar energy", "солнечная энергия", "solar power"],
+            ["quyosh energiya", "solar energy", "солнечная энергия", "solar power",
+             "қуёш энергия", "қуёш энергиясидан"],
+            ["қуёш энергия", "қуёш энергияси"],
             ["shamol energiya", "wind energy", "ветровая энергия", "wind power"],
             ["qayta tiklanuvchi energiya", "renewable energy", "возобновляемая энергия"],
             ["past karbon elektr", "low-carbon electricity", "low carbon generation",
@@ -648,6 +652,7 @@ _GREEN_SEMANTIC_CONCEPTS: dict[str, dict[str, list[list[str]]]] = {
     },
     "environmental_infrastructure": {
         "strong": [
+            ["tashkil qilingan manba"],
             ["chang-gaz filtr", "chang gaz filtr", "dust-gas filter",
              "пылегазоулавлив"],
             ["suv tozalash inshoot", "water treatment facility",
@@ -657,6 +662,7 @@ _GREEN_SEMANTIC_CONCEPTS: dict[str, dict[str, list[list[str]]]] = {
             ["oqova suv tozalash", "oqava suv tozalash", "wastewater treatment",
              "очистка сточных вод"],
             ["sanoat ifloslanishini nazorat", "industrial pollution control"],
+            ["tashkil qilingan manba"],
         ],
         "partial": [
             ["suv tozalash", "water treatment", "водоочист"],
@@ -682,6 +688,8 @@ _GREEN_SEMANTIC_CONCEPTS: dict[str, dict[str, list[list[str]]]] = {
             ["edge sertifikat", "edge certified", "edge certification"],
             ["breeam sertifikat", "breeam certified", "breeam certification"],
             ["iso 14001"],
+            ["davlat ekologik ekspertiza xulosasi", "ekologik ekspertiza xulosasi"],
+            ["давлат экологик экспертиза", "экологик экспертиза хулосаси"],
         ],
         "partial": [
             ["leed"],
@@ -692,6 +700,7 @@ _GREEN_SEMANTIC_CONCEPTS: dict[str, dict[str, list[list[str]]]] = {
             ["vakolatli organ tomonidan"],
             ["atrof-muhit boshqaruv sertifikat",
              "environmental management certificate"],
+            ["оеко", "oeko-tex", "oeko tex"],
         ],
         "weak": [],  # plain "sertifikat" alone never qualifies
     },
@@ -901,7 +910,23 @@ def _validate_esg_response(raw_esg: dict, text: str) -> dict:
     }
     """
     import copy as _copy
-    t = text.lower()
+    # Normalize whitespace so OCR line-breaks don't break phrase matching
+    t = ' '.join(text.lower().split())
+
+    # Canonical names the LLM must use; map common deviations back
+    _CRIT_ALIASES: dict[str, str] = {
+        "sustainability_certificates": "certificate",
+        "sustainability_certificate":  "certificate",
+        "green_certificate":           "certificate",
+        "environmental_certificate":   "certificate",
+        "renewables":                  "renewable_energy",
+        "solar_energy":                "renewable_energy",
+        "clean_energy":                "renewable_energy",
+        "energy_saving":               "energy_efficiency",
+        "ghg":                         "ghg_reduction",
+        "emission_reduction":          "ghg_reduction",
+        "env_infrastructure":          "environmental_infrastructure",
+    }
 
     rejected: list[str] = []
     notes:    list[str] = []
@@ -939,7 +964,8 @@ def _validate_esg_response(raw_esg: dict, text: str) -> dict:
         validated["stop_factors"][name] = {"value": final, "evidence": evid}
 
     # ── Validate green criteria ───────────────────────────────────────────
-    for name, obj in raw_esg.get("green_criteria", {}).items():
+    for raw_name, obj in raw_esg.get("green_criteria", {}).items():
+        name = _CRIT_ALIASES.get(raw_name, raw_name)  # normalise LLM key
         if not isinstance(obj, dict):
             validated["green_criteria"][name] = {"value": 0.0, "evidence": ""}
             continue
